@@ -248,4 +248,159 @@
                     const iconCode = previsionLaPlusProche.weather[0].icon;
 
                     const htmlIcone = `
-                        <div style="background: rgba(255,255,255,0.9); border-radius: 50%; width: 34px; height: 34px; display: flex; justify-content: center; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.3); border: 2px solid #
+                        <div style="background: rgba(255,255,255,0.9); border-radius: 50%; width: 34px; height: 34px; display: flex; justify-content: center; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.3); border: 2px solid #2980b9; margin: 0 auto;">
+                            <div style="transform: rotate(${previsionLaPlusProche.wind.deg}deg); font-size: 20px;">⬇</div>
+                        </div>
+                        <div style="background: white; border-radius: 4px; font-size: 11px; font-weight: bold; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.3); margin-top: 2px; width: 54px; margin-left: -10px; padding: 2px 0;">
+                            ${vitesseKmh} km/h<br>
+                            <span style="color: #e74c3c; font-size: 10px;">🕒 ${heureTexte}</span>
+                        </div>
+                    `;
+                    
+                    const ventIcon = L.divIcon({ html: htmlIcone, className: 'custom-vent-icon', iconSize: [34, 60], iconAnchor: [17, 25] });
+                    const marqueur = L.marker([pt.lat, pt.lon], {icon: ventIcon}).addTo(map);
+                    
+                    marqueur.bindPopup(`
+                        <div style="text-align:center;">
+                            <b>Km ${pt.km}</b><br>
+                            <img src="https://openweathermap.org/img/wn/${iconCode}.png" style="width:30px; vertical-align:middle;"> ${tempPrevue}°C
+                        </div>
+                    `);
+                    marqueursVentParcours.push(marqueur); 
+                });
+            });
+        }
+
+        const pluginPositionCycliste = {
+            id: 'pointCycliste',
+            afterDraw: (chart) => {
+                if (indexPositionCycliste !== null && indexPositionCycliste >= 0) {
+                    const ctx = chart.ctx;
+                    const meta = chart.getDatasetMeta(0);
+                    const point = meta.data[indexPositionCycliste];
+                    
+                    if(point) {
+                        ctx.save();
+                        ctx.beginPath();
+                        ctx.arc(point.x, point.y, 6, 0, 2 * Math.PI);
+                        ctx.fillStyle = '#e74c3c'; 
+                        ctx.fill();
+                        ctx.lineWidth = 2;
+                        ctx.strokeStyle = '#ffffff';
+                        ctx.stroke();
+                        ctx.restore();
+                    }
+                }
+            }
+        };
+
+        function genererGraphique(labels, data) {
+            const ctx = document.getElementById('elevationChart').getContext('2d');
+            if (graphiqueAltitude) graphiqueAltitude.destroy(); 
+            graphiqueAltitude = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Altitude', data: data, borderColor: '#2980b9', backgroundColor: 'rgba(41, 128, 185, 0.2)',
+                        borderWidth: 2, fill: true, pointRadius: 0, tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, 
+                    scales: { x: { ticks: { maxTicksLimit: 8 } }, y: { title: { display: true, text: 'Mètres' } } }
+                },
+                plugins: [pluginPositionCycliste]
+            });
+        }
+
+        function placerCyclisteSurGraphique(lat, lon) {
+            if (donneesGPX.length === 0 || !graphiqueAltitude) return;
+            
+            let distanceMin = Infinity;
+            let meilleurIndex = -1;
+            
+            donneesGPX.forEach((pt, index) => {
+                let d = calculerDistance(lat, lon, pt.lat, pt.lon);
+                if (d < distanceMin) {
+                    distanceMin = d;
+                    meilleurIndex = index;
+                }
+            });
+            
+            if (distanceMin <= 3.0) {
+                indexPositionCycliste = meilleurIndex;
+            } else {
+                indexPositionCycliste = null; 
+            }
+            
+            graphiqueAltitude.update(); 
+        }
+
+        function obtenirDirectionVent(degres) {
+            const directions = ['Nord', 'Nord-Est', 'Est', 'Sud-Est', 'Sud', 'Sud-Ouest', 'Ouest', 'Nord-Ouest'];
+            return directions[Math.round(degres / 45) % 8];
+        }
+
+        function recupererMeteo(lat, lon) {
+            const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${cleAPI}&units=metric&lang=fr`;
+            fetch(url).then(r => r.json()).then(data => {
+                document.getElementById('ville').innerText = data.name;
+                document.getElementById('temperature').innerText = Math.round(data.main.temp);
+                document.getElementById('temp-ressentie').innerText = Math.round(data.main.feels_like);
+                document.getElementById('description').innerText = data.weather[0].description;
+                document.getElementById('icone').src = `https://openweathermap.org/img/wn/${data.weather[0].icon}@2x.png`;
+
+                const vitesseKmh = Math.round(data.wind.speed * 3.6);
+                const degres = data.wind.deg;
+                document.getElementById('vitesse-vent').innerText = vitesseKmh;
+                document.getElementById('direction-vent').innerText = obtenirDirectionVent(degres);
+                document.getElementById('fleche').style.transform = `rotate(${degres}deg)`;
+                
+                if (data.wind.gust) {
+                    document.getElementById('rafales-vent').innerText = Math.round(data.wind.gust * 3.6);
+                    document.getElementById('bloc-rafales').style.display = 'block';
+                } else {
+                    document.getElementById('bloc-rafales').style.display = 'none';
+                }
+                
+                document.getElementById('bloc-infos').style.display = 'block';
+                document.getElementById('bloc-vent').style.display = 'flex';
+                
+                document.getElementById('btn-gps').innerText = "🔄 Actualiser ma position";
+            }).catch(e => {
+                document.getElementById('message-erreur').innerText = "Erreur de connexion API.";
+                document.getElementById('btn-gps').innerText = "📍 Réessayer";
+            });
+        }
+
+        document.getElementById('btn-gps').addEventListener('click', function() {
+            this.innerText = "⏳ Recherche...";
+            document.getElementById('message-erreur').innerText = ""; 
+
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const lat = position.coords.latitude;
+                        const lon = position.coords.longitude;
+                        
+                        map.setView([lat, lon], 13);
+                        
+                        if (marqueurGPS) marqueurGPS.setLatLng([lat, lon]);
+                        else marqueurGPS = L.marker([lat, lon]).addTo(map);
+                        
+                        placerCyclisteSurGraphique(lat, lon);
+                        recupererMeteo(lat, lon);
+                    },
+                    (erreur) => {
+                        this.innerText = "📍 Ma position & Météo";
+                        document.getElementById('message-erreur').innerText = "GPS refusé.";
+                    }
+                );
+            } else {
+                document.getElementById('message-erreur').innerText = "GPS non supporté.";
+            }
+        });
+    </script>
+</body>
+</html>
