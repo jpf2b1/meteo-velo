@@ -18,17 +18,22 @@
         #map { flex: 1; width: 100%; z-index: 1; }
 
         #gpx-panel {
-            display: none; height: 250px; background: white;
+            display: none; height: 260px; background: white;
             border-top: 2px solid #2980b9; box-shadow: 0 -4px 10px rgba(0,0,0,0.1);
             padding: 10px; box-sizing: border-box; z-index: 1000;
         }
 
         .stats-gpx {
-            display: flex; justify-content: space-around; font-weight: bold;
-            color: #2c3e50; margin-bottom: 5px; font-size: 14px;
+            display: flex; justify-content: space-around; flex-wrap: wrap; font-weight: bold;
+            color: #2c3e50; margin-bottom: 5px; font-size: 14px; gap: 5px;
         }
 
-        .chart-container { position: relative; height: 190px; width: 100%; }
+        .input-vitesse {
+            width: 50px; text-align: center; border: 1px solid #bdc3c7; 
+            border-radius: 4px; padding: 2px; font-weight: bold; color: #2980b9;
+        }
+
+        .chart-container { position: relative; height: 170px; width: 100%; margin-top: 5px;}
 
         .btn-gpx-container {
             position: absolute; top: 20px; left: 50%; transform: translateX(-50%); z-index: 1000;
@@ -103,8 +108,10 @@
 
     <div id="gpx-panel">
         <div class="stats-gpx">
-            <div>📏 Distance: <span id="stat-dist">0</span> km</div>
-            <div>⛰️ Dénivelé: <span id="stat-denivele">0</span> m</div>
+            <div>📏 <span id="stat-dist">0</span> km</div>
+            <div>⛰️ <span id="stat-denivele">0</span> m</div>
+            <!-- NOUVEAU : Champ pour régler la vitesse moyenne -->
+            <div>⏱️ Moyenne: <input type="number" id="vitesse-moyenne" class="input-vitesse" value="25" min="10" max="50"> km/h</div>
         </div>
         <div class="chart-container">
             <canvas id="elevationChart"></canvas>
@@ -114,7 +121,7 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <script>
-        // ⚠️ REMETTEZ VOTRE CLÉ API ICI
+        // Votre clé est maintenant intégrée directement !
         const cleAPI = 'd987d1ede347de41baa4bbd51ac41450'; 
 
         const map = L.map('map', {zoomControl: false}).setView([46.603354, 1.888334], 6);
@@ -124,9 +131,11 @@
         let traceGPXLayer = null;
         let graphiqueAltitude = null;
         let marqueursVentParcours = []; 
-        
         let donneesGPX = []; 
         let indexPositionCycliste = null; 
+        
+        // Variable globale pour mémoriser les points de relevé météo
+        let pointsVingtKmGlobale = [];
 
         function calculerDistance(lat1, lon1, lat2, lon2) {
             const R = 6371; 
@@ -155,8 +164,8 @@
                 let denivelePositif = 0;
                 let derniereLat = null, derniereLon = null, derniereEle = null;
                 let prochainPalierVent = 20; 
-                let pointsVingtKm = []; 
                 
+                pointsVingtKmGlobale = []; 
                 donneesGPX = [];
                 indexPositionCycliste = null;
 
@@ -174,13 +183,12 @@
                         if (ele > derniereEle) denivelePositif += (ele - derniereEle); 
 
                         if (distanceTotale >= prochainPalierVent) {
-                            pointsVingtKm.push({ lat: lat, lon: lon, km: prochainPalierVent });
+                            pointsVingtKmGlobale.push({ lat: lat, lon: lon, km: prochainPalierVent });
                             prochainPalierVent += 20; 
                         }
                     }
 
                     donneesGPX.push({ lat: lat, lon: lon, distance: distanceTotale });
-
                     labelsDistance.push(distanceTotale.toFixed(1));
                     dataAltitude.push(ele);
                     derniereLat = lat; derniereLon = lon; derniereEle = ele;
@@ -194,40 +202,86 @@
                     document.getElementById('stat-dist').innerText = distanceTotale.toFixed(1);
                     document.getElementById('stat-denivele').innerText = Math.round(denivelePositif);
                     document.getElementById('gpx-panel').style.display = 'block';
-                    document.getElementById('meteo-widget').style.bottom = '260px'; 
+                    document.getElementById('meteo-widget').style.bottom = '270px'; 
                     setTimeout(() => map.invalidateSize(), 300); 
 
                     genererGraphique(labelsDistance, dataAltitude);
-                    ajouterVentSurParcours(pointsVingtKm);
+                    ajouterVentSurParcours(pointsVingtKmGlobale);
                 }
             };
             reader.readAsText(file);
+        });
+
+        // Relancer le calcul si on modifie la vitesse moyenne manuellement
+        document.getElementById('vitesse-moyenne').addEventListener('change', function() {
+            if (pointsVingtKmGlobale.length > 0) {
+                ajouterVentSurParcours(pointsVingtKmGlobale);
+            }
         });
 
         function ajouterVentSurParcours(points) {
             marqueursVentParcours.forEach(m => map.removeLayer(m));
             marqueursVentParcours = [];
 
+            // Récupération de la vitesse moyenne saisie (par défaut 25 km/h)
+            const vitesseMoyenne = parseFloat(document.getElementById('vitesse-moyenne').value) || 25;
+            const tempsActuelUnx = Math.floor(Date.now() / 1000); // Temps actuel en secondes
+
             points.forEach(pt => {
-                const url = `https://api.openweathermap.org/data/2.5/weather?lat=${pt.lat}&lon=${pt.lon}&appid=${cleAPI}&units=metric`;
+                // Calcul de l'heure d'arrivée estimée à ce point (Distance / Vitesse = Heures)
+                const tempsParcoursSecondes = (pt.km / vitesseMoyenne) * 3600;
+                const heureArriveeEstimee = tempsActuelUnx + tempsParcoursSecondes;
+
+                // NOUVEAU : Appel à l'API "forecast" (prévisions sur 5 jours / toutes les 3h)
+                const url = `https://api.openweathermap.org/data/2.5/forecast?lat=${pt.lat}&lon=${pt.lon}&appid=${cleAPI}&units=metric&lang=fr`;
+                
                 fetch(url).then(r => r.json()).then(data => {
+                    // On cherche la prévision dont l'heure correspond le plus à notre passage
+                    let previsionLaPlusProche = data.list[0];
+                    let differenceMini = Math.abs(previsionLaPlusProche.dt - heureArriveeEstimee);
+                    
+                    for(let i = 1; i < data.list.length; i++) {
+                        let diff = Math.abs(data.list[i].dt - heureArriveeEstimee);
+                        if(diff < differenceMini) {
+                            differenceMini = diff;
+                            previsionLaPlusProche = data.list[i];
+                        }
+                    }
+
+                    // Formatage de l'heure d'arrivée pour le popup
+                    const dateArrivee = new Date(heureArriveeEstimee * 1000);
+                    const heureTexte = dateArrivee.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+                    
+                    const vitesseKmh = Math.round(previsionLaPlusProche.wind.speed * 3.6);
+                    const tempPrevue = Math.round(previsionLaPlusProche.main.temp);
+                    const iconCode = previsionLaPlusProche.weather[0].icon;
+
                     const htmlIcone = `
                         <div style="background: rgba(255,255,255,0.9); border-radius: 50%; width: 34px; height: 34px; display: flex; justify-content: center; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.3); border: 2px solid #2980b9;">
-                            <div style="transform: rotate(${data.wind.deg}deg); font-size: 20px;">⬇</div>
+                            <div style="transform: rotate(${previsionLaPlusProche.wind.deg}deg); font-size: 20px;">⬇</div>
                         </div>
                         <div style="background: white; border-radius: 4px; font-size: 11px; font-weight: bold; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.3); margin-top: 2px; width: 44px; margin-left: -5px; padding: 1px 0;">
-                            ${Math.round(data.wind.speed * 3.6)} km/h
+                            ${vitesseKmh} km/h
                         </div>
                     `;
+                    
                     const ventIcon = L.divIcon({ html: htmlIcone, className: 'custom-vent-icon', iconSize: [34, 50], iconAnchor: [17, 25] });
                     const marqueur = L.marker([pt.lat, pt.lon], {icon: ventIcon}).addTo(map);
-                    marqueur.bindPopup(`<b>Km ${pt.km}</b>`);
+                    
+                    // Le popup indique maintenant l'heure de passage prévue et la météo à ce moment
+                    marqueur.bindPopup(`
+                        <div style="text-align:center;">
+                            <b>Km ${pt.km}</b><br>
+                            Passage vers <b>${heureTexte}</b><br>
+                            <img src="https://openweathermap.org/img/wn/${iconCode}.png" style="width:30px; vertical-align:middle;"> ${tempPrevue}°C<br>
+                            Vent : ${vitesseKmh} km/h
+                        </div>
+                    `);
                     marqueursVentParcours.push(marqueur); 
                 });
             });
         }
 
-        // NOUVEAU : Plugin mis à jour pour dessiner un joli point rouge sur la courbe
         const pluginPositionCycliste = {
             id: 'pointCycliste',
             afterDraw: (chart) => {
@@ -239,12 +293,9 @@
                     if(point) {
                         ctx.save();
                         ctx.beginPath();
-                        // Dessin du cercle (x, y, rayon, angle de départ, angle de fin)
                         ctx.arc(point.x, point.y, 6, 0, 2 * Math.PI);
-                        ctx.fillStyle = '#e74c3c'; // Rouge
+                        ctx.fillStyle = '#e74c3c'; 
                         ctx.fill();
-                        
-                        // Bordure blanche autour du point rouge
                         ctx.lineWidth = 2;
                         ctx.strokeStyle = '#ffffff';
                         ctx.stroke();
@@ -288,7 +339,6 @@
                 }
             });
             
-            // Si à moins de 3km du parcours, on place le point rouge
             if (distanceMin <= 3.0) {
                 indexPositionCycliste = meilleurIndex;
             } else {
@@ -303,6 +353,7 @@
             return directions[Math.round(degres / 45) % 8];
         }
 
+        // La météo de la position actuelle reste en temps réel (weather)
         function recupererMeteo(lat, lon) {
             const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${cleAPI}&units=metric&lang=fr`;
             fetch(url).then(r => r.json()).then(data => {
@@ -350,9 +401,7 @@
                         if (marqueurGPS) marqueurGPS.setLatLng([lat, lon]);
                         else marqueurGPS = L.marker([lat, lon]).addTo(map);
                         
-                        // C'est ici que l'on met à jour le point rouge !
                         placerCyclisteSurGraphique(lat, lon);
-                        
                         recupererMeteo(lat, lon);
                     },
                     (erreur) => {
