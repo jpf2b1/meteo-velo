@@ -30,15 +30,19 @@
         }
 
         h1 { margin: 0; font-size: 28px; color: #2c3e50; }
-        .temp { font-size: 64px; font-weight: bold; color: #fff; margin: 10px 0; text-shadow: 2px 2px 4px rgba(0,0,0,0.2); }
+        .temp { font-size: 64px; font-weight: bold; color: #fff; margin: 5px 0 0 0; text-shadow: 2px 2px 4px rgba(0,0,0,0.2); }
+        
+        /* Style pour le ressenti et les rafales */
+        .ressenti { font-size: 16px; color: #2c3e50; font-weight: 600; margin-bottom: 10px; opacity: 0.8; }
+        .rafales { font-size: 13px; color: #c0392b; font-weight: bold; margin-top: 4px; }
+        
         .desc { font-size: 20px; text-transform: capitalize; color: #2c3e50; font-weight: 500; margin-bottom: 20px; }
         
-        /* 1. NOUVEAU STYLE POUR LE VENT */
         .vent-box {
             background: rgba(255, 255, 255, 0.4);
             border-radius: 12px;
             padding: 12px;
-            display: none; /* Caché au démarrage */
+            display: none;
             justify-content: space-around;
             align-items: center;
             font-size: 16px;
@@ -61,11 +65,18 @@
         <h1 id="ville">Recherche GPS...</h1>
         <img id="icone" src="" alt="" style="display:none; margin: 10px auto; width: 100px;">
         <div class="temp"><span id="temperature">--</span>°</div>
+        
+        <!-- NOUVEAU : Affichage de la température ressentie -->
+        <div class="ressenti">Ressenti : <span id="temp-ressentie">--</span>°</div>
+        
         <div class="desc" id="description">Autorisez la localisation</div>
         
-        <!-- 2. NOUVELLE BOÎTE HTML POUR LE VENT -->
         <div class="vent-box" id="bloc-vent">
-            <div>💨 <span id="vitesse-vent">--</span> km/h</div>
+            <div style="text-align: left;">
+                <div>💨 <span id="vitesse-vent">--</span> km/h</div>
+                <!-- NOUVEAU : Bloc caché par défaut pour les rafales -->
+                <div id="bloc-rafales" class="rafales" style="display:none;">⚠️ Rafales : <span id="rafales-vent">--</span> km/h</div>
+            </div>
             <div><span class="fleche-vent" id="fleche">⬇</span> <span id="direction-vent">--</span></div>
         </div>
 
@@ -76,7 +87,6 @@
         // ⚠️ REMETTEZ VOTRE CLÉ API ICI
         const cleAPI = 'd987d1ede347de41baa4bbd51ac41450'; 
 
-        // 3. FONCTION DE TRADUCTION DES DEGRÉS EN TEXTE
         function obtenirDirectionVent(degres) {
             const directions = ['Nord', 'Nord-Est', 'Est', 'Sud-Est', 'Sud', 'Sud-Ouest', 'Ouest', 'Nord-Ouest'];
             return directions[Math.round(degres / 45) % 8];
@@ -90,6 +100,10 @@
                 .then(data => {
                     document.getElementById('ville').innerText = data.name;
                     document.getElementById('temperature').innerText = Math.round(data.main.temp);
+                    
+                    // NOUVEAU : Récupération du ressenti
+                    document.getElementById('temp-ressentie').innerText = Math.round(data.main.feels_like);
+                    
                     document.getElementById('description').innerText = data.weather[0].description;
                     
                     const iconCode = data.weather[0].icon;
@@ -97,36 +111,17 @@
                     imgIcone.src = `https://openweathermap.org/img/wn/${iconCode}@2x.png`;
                     imgIcone.style.display = 'block';
 
-                    // 4. RÉCUPÉRATION ET AFFICHAGE DU VENT
-                    const vitesseKmh = Math.round(data.wind.speed * 3.6); // Conversion de mètres/seconde en km/h
+                    const vitesseKmh = Math.round(data.wind.speed * 3.6);
                     const degres = data.wind.deg;
 
                     document.getElementById('vitesse-vent').innerText = vitesseKmh;
                     document.getElementById('direction-vent').innerText = obtenirDirectionVent(degres);
                     document.getElementById('fleche').style.transform = `rotate(${degres}deg)`;
                     
-                    // On rend la boîte visible
-                    document.getElementById('bloc-vent').style.display = 'flex';
-                })
-                .catch(erreur => {
-                    document.getElementById('message-erreur').innerText = "Erreur de connexion à l'API.";
-                });
-        }
-
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-                (position) => {
-                    recupererMeteo(position.coords.latitude, position.coords.longitude);
-                },
-                (erreur) => {
-                    document.getElementById('ville').innerText = "Position introuvable";
-                    document.getElementById('message-erreur').innerText = "Vous devez autoriser le GPS pour voir la météo locale.";
-                }
-            );
-        } else {
-            document.getElementById('message-erreur').innerText = "Le GPS n'est pas supporté par votre navigateur.";
-        }
-    </script>
-
-</body>
-</html>
+                    // NOUVEAU : Gestion conditionnelle des rafales
+                    if (data.wind.gust) {
+                        const rafalesKmh = Math.round(data.wind.gust * 3.6);
+                        document.getElementById('rafales-vent').innerText = rafalesKmh;
+                        document.getElementById('bloc-rafales').style.display = 'block'; // On affiche l'alerte
+                    } else {
+                        document.getElementById('bloc-rafales').style.display
