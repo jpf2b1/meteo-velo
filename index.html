@@ -5,52 +5,31 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Météo & Traceur Vélo</title>
     
-    <!-- Leaflet CSS pour la carte -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <!-- Chart.js pour le graphique d'altitude -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <style>
         body, html {
-            margin: 0; padding: 0;
-            height: 100vh;
+            margin: 0; padding: 0; height: 100vh;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden; /* Empêche le défilement global */
+            display: flex; flex-direction: column; overflow: hidden;
         }
 
-        /* La carte prend tout l'espace disponible */
         #map { flex: 1; width: 100%; z-index: 1; }
 
-        /* NOUVEAU : Panneau du profil altimétrique (caché par défaut) */
         #gpx-panel {
-            display: none;
-            height: 250px;
-            background: white;
-            border-top: 2px solid #2980b9;
-            box-shadow: 0 -4px 10px rgba(0,0,0,0.1);
-            padding: 10px;
-            box-sizing: border-box;
-            z-index: 1000;
+            display: none; height: 250px; background: white;
+            border-top: 2px solid #2980b9; box-shadow: 0 -4px 10px rgba(0,0,0,0.1);
+            padding: 10px; box-sizing: border-box; z-index: 1000;
         }
 
         .stats-gpx {
-            display: flex;
-            justify-content: space-around;
-            font-weight: bold;
-            color: #2c3e50;
-            margin-bottom: 5px;
-            font-size: 14px;
+            display: flex; justify-content: space-around; font-weight: bold;
+            color: #2c3e50; margin-bottom: 5px; font-size: 14px;
         }
 
-        .chart-container {
-            position: relative;
-            height: 190px;
-            width: 100%;
-        }
+        .chart-container { position: relative; height: 190px; width: 100%; }
 
-        /* Boutons et éléments flottants */
         .btn-gpx-container {
             position: absolute; top: 20px; left: 50%; transform: translateX(-50%); z-index: 1000;
         }
@@ -62,14 +41,13 @@
         }
         .btn-action:active { background-color: #2471a3; transform: translateY(2px); }
 
-        /* Carte météo flottante */
         .meteo-carte {
             position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 1000;
             background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(10px);
             border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.5);
             padding: 20px; text-align: center; width: 85%; max-width: 350px;
             box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3); color: #333;
-            transition: bottom 0.3s ease; /* Animation fluide si le graphique apparaît */
+            transition: bottom 0.3s ease;
         }
 
         h1 { margin: 0; font-size: 22px; color: #2c3e50; }
@@ -85,11 +63,13 @@
 
         .fleche-vent { display: inline-block; font-size: 20px; transition: transform 0.5s ease; }
         .erreur { color: #d32f2f; font-weight: bold; margin-top: 10px; font-size: 13px;}
+
+        /* NOUVEAU : On s'assure que le fond des icônes Leaflet est transparent */
+        .leaflet-div-icon { background: transparent; border: none; }
     </style>
 </head>
 <body>
 
-    <!-- Bouton GPX -->
     <div class="btn-gpx-container">
         <label class="btn-action">
             📂 Charger un GPX
@@ -97,7 +77,6 @@
         </label>
     </div>
 
-    <!-- Interface Météo -->
     <div class="meteo-carte" id="meteo-widget">
         <h1 id="ville">Météo Vélo</h1>
         <button id="btn-gps" class="btn-action" style="margin-top: 10px; width: 100%;">📍 Ma position & Météo</button>
@@ -121,10 +100,8 @@
         <div id="message-erreur" class="erreur"></div>
     </div>
 
-    <!-- Conteneur de la carte -->
     <div id="map"></div>
 
-    <!-- NOUVEAU : Panneau des statistiques du GPX -->
     <div id="gpx-panel">
         <div class="stats-gpx">
             <div>📏 Distance: <span id="stat-dist">0</span> km</div>
@@ -135,11 +112,10 @@
         </div>
     </div>
 
-    <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <script>
-        // ⚠️ REMETTEZ VOTRE CLÉ API ICI .
+        // ⚠️ REMETTEZ VOTRE CLÉ API ICI
         const cleAPI = 'd987d1ede347de41baa4bbd51ac41450'; 
 
         const map = L.map('map', {zoomControl: false}).setView([46.603354, 1.888334], 6);
@@ -148,10 +124,10 @@
         let marqueurGPS = null;
         let traceGPXLayer = null;
         let graphiqueAltitude = null;
+        let marqueursVentParcours = []; // Pour stocker et effacer les marqueurs de vent
 
-        // Fonction mathématique pour calculer la distance entre 2 points GPS
         function calculerDistance(lat1, lon1, lat2, lon2) {
-            const R = 6371; // Rayon de la Terre en km
+            const R = 6371; 
             const dLat = (lat2 - lat1) * Math.PI / 180;
             const dLon = (lon2 - lon1) * Math.PI / 180;
             const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
@@ -159,7 +135,6 @@
             return R * c;
         }
 
-        // 1. ANALYSE DU FICHIER GPX
         document.getElementById('gpx-input').addEventListener('change', function(e) {
             const file = e.target.files[0];
             if (!file) return;
@@ -178,26 +153,32 @@
                 let denivelePositif = 0;
                 let derniereLat = null, derniereLon = null, derniereEle = null;
 
+                // NOUVEAU : Variables pour traquer les paliers de 20 km
+                let prochainPalierVent = 20; 
+                let pointsVingtKm = []; // On y mettra les coordonnées tous les 20km
+
                 for (let i = 0; i < trackPoints.length; i++) {
                     const lat = parseFloat(trackPoints[i].getAttribute("lat"));
                     const lon = parseFloat(trackPoints[i].getAttribute("lon"));
                     const eleNode = trackPoints[i].getElementsByTagName("ele")[0];
-                    const ele = eleNode ? parseFloat(eleNode.textContent) : 0; // Altitude par défaut 0 si absente
+                    const ele = eleNode ? parseFloat(eleNode.textContent) : 0; 
 
                     latlngs.push([lat, lon]);
 
                     if (derniereLat !== null) {
                         const dist = calculerDistance(derniereLat, derniereLon, lat, lon);
                         distanceTotale += dist;
-                        if (ele > derniereEle) {
-                            denivelePositif += (ele - derniereEle); // On cumule seulement quand on monte
+                        if (ele > derniereEle) denivelePositif += (ele - derniereEle); 
+
+                        // NOUVEAU : Si on dépasse un palier de 20km, on enregistre le point
+                        if (distanceTotale >= prochainPalierVent) {
+                            pointsVingtKm.push({ lat: lat, lon: lon, km: prochainPalierVent });
+                            prochainPalierVent += 20; // On prépare le prochain cap (40, 60...)
                         }
                     }
 
-                    // On enregistre les données pour le graphique (tous les points)
                     labelsDistance.push(distanceTotale.toFixed(1));
                     dataAltitude.push(ele);
-
                     derniereLat = lat; derniereLon = lon; derniereEle = ele;
                 }
 
@@ -206,57 +187,82 @@
                     traceGPXLayer = L.polyline(latlngs, {color: 'red', weight: 4}).addTo(map);
                     map.fitBounds(traceGPXLayer.getBounds());
 
-                    // Mise à jour de l'affichage des chiffres
                     document.getElementById('stat-dist').innerText = distanceTotale.toFixed(1);
                     document.getElementById('stat-denivele').innerText = Math.round(denivelePositif);
-
-                    // Affichage du panneau et ajustement de la météo
                     document.getElementById('gpx-panel').style.display = 'block';
-                    // On remonte un peu le widget météo pour ne pas qu'il cache le graphique
                     document.getElementById('meteo-widget').style.bottom = '260px'; 
-                    setTimeout(() => map.invalidateSize(), 300); // Recadre la carte après ouverture du panneau
+                    setTimeout(() => map.invalidateSize(), 300); 
 
                     genererGraphique(labelsDistance, dataAltitude);
-                } else {
-                    alert("Aucune coordonnée trouvée dans ce GPX.");
+                    
+                    // NOUVEAU : On lance la recherche météo sur les points kilométriques
+                    ajouterVentSurParcours(pointsVingtKm);
                 }
             };
             reader.readAsText(file);
         });
 
-        // 2. CRÉATION DU GRAPHIQUE CHART.JS
+        // NOUVEAU : Fonction pour interroger l'API et afficher les marqueurs
+        function ajouterVentSurParcours(points) {
+            // 1. On nettoie les anciens marqueurs si on charge un nouveau tracé
+            marqueursVentParcours.forEach(marqueur => map.removeLayer(marqueur));
+            marqueursVentParcours = [];
+
+            // 2. Pour chaque point kilométrique enregistré (20, 40, 60...)
+            points.forEach(pt => {
+                const url = `https://api.openweathermap.org/data/2.5/weather?lat=${pt.lat}&lon=${pt.lon}&appid=${cleAPI}&units=metric`;
+                
+                fetch(url).then(r => r.json()).then(data => {
+                    const vitesseKmh = Math.round(data.wind.speed * 3.6);
+                    const degres = data.wind.deg;
+
+                    // Création d'une icône HTML personnalisée avec la flèche qui tourne
+                    const htmlIcone = `
+                        <div style="background: rgba(255,255,255,0.9); border-radius: 50%; width: 34px; height: 34px; display: flex; justify-content: center; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.3); border: 2px solid #2980b9;">
+                            <div style="transform: rotate(${degres}deg); font-size: 20px;">⬇</div>
+                        </div>
+                        <div style="background: white; border-radius: 4px; font-size: 11px; font-weight: bold; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.3); margin-top: 2px; width: 44px; margin-left: -5px; padding: 1px 0;">
+                            ${vitesseKmh} km/h
+                        </div>
+                    `;
+
+                    const ventIcon = L.divIcon({
+                        html: htmlIcone,
+                        className: 'custom-vent-icon',
+                        iconSize: [34, 50],
+                        iconAnchor: [17, 25] // Centre l'icône sur le tracé
+                    });
+
+                    // On place le marqueur sur la carte
+                    const marqueur = L.marker([pt.lat, pt.lon], {icon: ventIcon}).addTo(map);
+                    
+                    // Si on clique dessus, ça donne le kilométrage
+                    marqueur.bindPopup(`<b>Kilomètre ${pt.km}</b><br>Vent : ${vitesseKmh} km/h`);
+                    
+                    marqueursVentParcours.push(marqueur); // On le sauvegarde pour pouvoir l'effacer plus tard
+                });
+            });
+        }
+
         function genererGraphique(labels, data) {
             const ctx = document.getElementById('elevationChart').getContext('2d');
-            if (graphiqueAltitude) graphiqueAltitude.destroy(); // On efface l'ancien s'il y en a un
-
+            if (graphiqueAltitude) graphiqueAltitude.destroy(); 
             graphiqueAltitude = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: labels,
                     datasets: [{
-                        label: 'Altitude (m)',
-                        data: data,
-                        borderColor: '#2980b9',
-                        backgroundColor: 'rgba(41, 128, 185, 0.2)',
-                        borderWidth: 2,
-                        fill: true,
-                        pointRadius: 0, // Cache les petits points pour faire une ligne lisse
-                        tension: 0.1
+                        label: 'Altitude', data: data, borderColor: '#2980b9', backgroundColor: 'rgba(41, 128, 185, 0.2)',
+                        borderWidth: 2, fill: true, pointRadius: 0, tension: 0.1
                     }]
                 },
                 options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: false } }, // Cache la légende
-                    scales: {
-                        x: { ticks: { maxTicksLimit: 8 } }, // N'affiche que 8 repères de km
-                        y: { title: { display: true, text: 'Mètres' } }
-                    }
+                    responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, 
+                    scales: { x: { ticks: { maxTicksLimit: 8 } }, y: { title: { display: true, text: 'Mètres' } } }
                 }
             });
         }
 
-        // 3. MÉTÉO ET GPS
         function obtenirDirectionVent(degres) {
             const directions = ['Nord', 'Nord-Est', 'Est', 'Sud-Est', 'Sud', 'Sud-Ouest', 'Ouest', 'Nord-Ouest'];
             return directions[Math.round(degres / 45) % 8];
