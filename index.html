@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Météo Vélo en direct</title>
+    <title>Météo Locale</title>
+    
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             margin: 0;
-            padding: 0;
             background: linear-gradient(135deg, #74ebd5 0%, #9face6 100%);
             display: flex;
             justify-content: center;
@@ -19,7 +19,6 @@
         .meteo-carte {
             background: rgba(255, 255, 255, 0.25);
             backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
             border-radius: 20px;
             border: 1px solid rgba(255, 255, 255, 0.18);
             padding: 40px 30px;
@@ -30,33 +29,30 @@
             color: #333;
         }
 
-        h1 {
-            margin: 0;
-            font-size: 28px;
+        h1 { margin: 0; font-size: 28px; color: #2c3e50; }
+        .temp { font-size: 64px; font-weight: bold; color: #fff; margin: 10px 0; text-shadow: 2px 2px 4px rgba(0,0,0,0.2); }
+        .desc { font-size: 20px; text-transform: capitalize; color: #2c3e50; font-weight: 500; margin-bottom: 20px; }
+        
+        /* 1. NOUVEAU STYLE POUR LE VENT */
+        .vent-box {
+            background: rgba(255, 255, 255, 0.4);
+            border-radius: 12px;
+            padding: 12px;
+            display: none; /* Caché au démarrage */
+            justify-content: space-around;
+            align-items: center;
+            font-size: 16px;
+            color: #2c3e50;
             font-weight: 600;
-            color: #2c3e50;
         }
 
-        .temp {
-            font-size: 64px;
-            font-weight: bold;
-            color: #fff;
-            margin: 10px 0;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        .fleche-vent {
+            display: inline-block;
+            font-size: 22px;
+            transition: transform 0.5s ease;
         }
 
-        .desc {
-            font-size: 20px;
-            text-transform: capitalize;
-            color: #2c3e50;
-            font-weight: 500;
-        }
-
-        .erreur {
-            color: #d32f2f;
-            font-weight: bold;
-            margin-top: 15px;
-        }
+        .erreur { color: #d32f2f; font-weight: bold; margin-top: 15px; }
     </style>
 </head>
 <body>
@@ -66,45 +62,63 @@
         <img id="icone" src="" alt="" style="display:none; margin: 10px auto; width: 100px;">
         <div class="temp"><span id="temperature">--</span>°</div>
         <div class="desc" id="description">Autorisez la localisation</div>
+        
+        <!-- 2. NOUVELLE BOÎTE HTML POUR LE VENT -->
+        <div class="vent-box" id="bloc-vent">
+            <div>💨 <span id="vitesse-vent">--</span> km/h</div>
+            <div><span class="fleche-vent" id="fleche">⬇</span> <span id="direction-vent">--</span></div>
+        </div>
+
         <div id="message-erreur" class="erreur"></div>
     </div>
 
     <script>
-        // ⚠️ REMPLACEZ CETTE LIGNE PAR VOTRE VRAIE CLÉ API OPENWEATHERMAP
+        // ⚠️ REMETTEZ VOTRE CLÉ API ICI
         const cleAPI = 'd987d1ede347de41baa4bbd51ac41450'; 
 
+        // 3. FONCTION DE TRADUCTION DES DEGRÉS EN TEXTE
+        function obtenirDirectionVent(degres) {
+            const directions = ['Nord', 'Nord-Est', 'Est', 'Sud-Est', 'Sud', 'Sud-Ouest', 'Ouest', 'Nord-Ouest'];
+            return directions[Math.round(degres / 45) % 8];
+        }
+
         function recupererMeteo(lat, lon) {
-            // URL de l'API avec la position GPS, l'unité en Celsius (metric) et la langue française
             const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${cleAPI}&units=metric&lang=fr`;
 
             fetch(url)
                 .then(reponse => reponse.json())
                 .then(data => {
-                    // Mettre à jour le HTML avec les données reçues
                     document.getElementById('ville').innerText = data.name;
                     document.getElementById('temperature').innerText = Math.round(data.main.temp);
                     document.getElementById('description').innerText = data.weather[0].description;
                     
-                    // Affichage de l'icône météo officielle
                     const iconCode = data.weather[0].icon;
                     const imgIcone = document.getElementById('icone');
                     imgIcone.src = `https://openweathermap.org/img/wn/${iconCode}@2x.png`;
                     imgIcone.style.display = 'block';
+
+                    // 4. RÉCUPÉRATION ET AFFICHAGE DU VENT
+                    const vitesseKmh = Math.round(data.wind.speed * 3.6); // Conversion de mètres/seconde en km/h
+                    const degres = data.wind.deg;
+
+                    document.getElementById('vitesse-vent').innerText = vitesseKmh;
+                    document.getElementById('direction-vent').innerText = obtenirDirectionVent(degres);
+                    document.getElementById('fleche').style.transform = `rotate(${degres}deg)`;
+                    
+                    // On rend la boîte visible
+                    document.getElementById('bloc-vent').style.display = 'flex';
                 })
                 .catch(erreur => {
                     document.getElementById('message-erreur').innerText = "Erreur de connexion à l'API.";
                 });
         }
 
-        // 1. Demander la position GPS au chargement de la page
         if (navigator.geolocation) {
             navigator.geolocation.getCurrentPosition(
                 (position) => {
-                    // Si accepté, on lance la recherche météo avec les coordonnées
                     recupererMeteo(position.coords.latitude, position.coords.longitude);
                 },
                 (erreur) => {
-                    // Si refusé ou introuvable
                     document.getElementById('ville').innerText = "Position introuvable";
                     document.getElementById('message-erreur').innerText = "Vous devez autoriser le GPS pour voir la météo locale.";
                 }
