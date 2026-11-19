@@ -5,65 +5,71 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Météo & Traceur Vélo</title>
     
-    <!-- Ajout de Leaflet CSS -->
+    <!-- Leaflet CSS pour la carte -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Chart.js pour le graphique d'altitude -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <style>
         body, html {
-            margin: 0;
-            padding: 0;
-            height: 100%;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
-
-        /* La carte prend tout l'écran en fond */
-        #map {
-            width: 100%;
+            margin: 0; padding: 0;
             height: 100vh;
-            z-index: 1;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden; /* Empêche le défilement global */
         }
 
-        /* Bouton GPX flottant en haut */
-        .btn-gpx-container {
-            position: absolute;
-            top: 20px;
-            left: 50%;
-            transform: translateX(-50%);
+        /* La carte prend tout l'espace disponible */
+        #map { flex: 1; width: 100%; z-index: 1; }
+
+        /* NOUVEAU : Panneau du profil altimétrique (caché par défaut) */
+        #gpx-panel {
+            display: none;
+            height: 250px;
+            background: white;
+            border-top: 2px solid #2980b9;
+            box-shadow: 0 -4px 10px rgba(0,0,0,0.1);
+            padding: 10px;
+            box-sizing: border-box;
             z-index: 1000;
+        }
+
+        .stats-gpx {
+            display: flex;
+            justify-content: space-around;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 190px;
+            width: 100%;
+        }
+
+        /* Boutons et éléments flottants */
+        .btn-gpx-container {
+            position: absolute; top: 20px; left: 50%; transform: translateX(-50%); z-index: 1000;
         }
 
         .btn-action {
-            background-color: #2980b9;
-            color: white;
-            border: none;
-            padding: 12px 20px;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: bold;
-            cursor: pointer;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-            display: inline-block;
-            text-align: center;
+            background-color: #2980b9; color: white; border: none; padding: 12px 20px;
+            border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3); display: inline-block; text-align: center;
         }
         .btn-action:active { background-color: #2471a3; transform: translateY(2px); }
 
-        /* Carte météo flottante en bas */
+        /* Carte météo flottante */
         .meteo-carte {
-            position: absolute;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            z-index: 1000;
-            background: rgba(255, 255, 255, 0.85); /* Un peu plus opaque pour lire sur la carte */
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            border: 1px solid rgba(255, 255, 255, 0.5);
-            padding: 20px;
-            text-align: center;
-            width: 85%;
-            max-width: 350px;
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
-            color: #333;
+            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 1000;
+            background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(10px);
+            border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.5);
+            padding: 20px; text-align: center; width: 85%; max-width: 350px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3); color: #333;
+            transition: bottom 0.3s ease; /* Animation fluide si le graphique apparaît */
         }
 
         h1 { margin: 0; font-size: 22px; color: #2c3e50; }
@@ -73,15 +79,8 @@
         .desc { font-size: 16px; text-transform: capitalize; color: #2c3e50; font-weight: 500; margin-bottom: 10px; }
         
         .vent-box {
-            background: rgba(255, 255, 255, 0.6);
-            border-radius: 12px;
-            padding: 10px;
-            display: none;
-            justify-content: space-around;
-            align-items: center;
-            font-size: 14px;
-            color: #2c3e50;
-            font-weight: 600;
+            background: rgba(255, 255, 255, 0.6); border-radius: 12px; padding: 10px; display: none;
+            justify-content: space-around; align-items: center; font-size: 14px; color: #2c3e50; font-weight: 600;
         }
 
         .fleche-vent { display: inline-block; font-size: 20px; transition: transform 0.5s ease; }
@@ -90,10 +89,7 @@
 </head>
 <body>
 
-    <!-- Conteneur de la carte -->
-    <div id="map"></div>
-
-    <!-- Bouton GPX (Flottant en haut) -->
+    <!-- Bouton GPX -->
     <div class="btn-gpx-container">
         <label class="btn-action">
             📂 Charger un GPX
@@ -101,8 +97,8 @@
         </label>
     </div>
 
-    <!-- Interface Météo (Flottante en bas) -->
-    <div class="meteo-carte">
+    <!-- Interface Météo -->
+    <div class="meteo-carte" id="meteo-widget">
         <h1 id="ville">Météo Vélo</h1>
         <button id="btn-gps" class="btn-action" style="margin-top: 10px; width: 100%;">📍 Ma position & Météo</button>
 
@@ -125,25 +121,45 @@
         <div id="message-erreur" class="erreur"></div>
     </div>
 
-    <!-- Ajout de Leaflet JS -->
+    <!-- Conteneur de la carte -->
+    <div id="map"></div>
+
+    <!-- NOUVEAU : Panneau des statistiques du GPX -->
+    <div id="gpx-panel">
+        <div class="stats-gpx">
+            <div>📏 Distance: <span id="stat-dist">0</span> km</div>
+            <div>⛰️ Dénivelé: <span id="stat-denivele">0</span> m</div>
+        </div>
+        <div class="chart-container">
+            <canvas id="elevationChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <script>
         // ⚠️ REMETTEZ VOTRE CLÉ API ICI
-        const cleAPI = 'd987d1ede347de41baa4bbd51ac41450'; 
+        const cleAPI = 'VOTRE_CLE_API_ICI'; 
 
-        // 1. INITIALISATION DE LA CARTE LEAFLET
-        // On centre par défaut sur la France
         const map = L.map('map', {zoomControl: false}).setView([46.603354, 1.888334], 6);
-        
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap contributors'
-        }).addTo(map);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
 
-        // Variable pour stocker le marqueur GPS
         let marqueurGPS = null;
+        let traceGPXLayer = null;
+        let graphiqueAltitude = null;
 
-        // 2. LECTURE DU FICHIER GPX
+        // Fonction mathématique pour calculer la distance entre 2 points GPS
+        function calculerDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371; // Rayon de la Terre en km
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
+
+        // 1. ANALYSE DU FICHIER GPX
         document.getElementById('gpx-input').addEventListener('change', function(e) {
             const file = e.target.files[0];
             if (!file) return;
@@ -155,26 +171,92 @@
                 const xmlDoc = parser.parseFromString(contenuGPX, "text/xml");
                 const trackPoints = xmlDoc.getElementsByTagName("trkpt");
                 
-                const latlngs = [];
+                let latlngs = [];
+                let labelsDistance = [];
+                let dataAltitude = [];
+                let distanceTotale = 0;
+                let denivelePositif = 0;
+                let derniereLat = null, derniereLon = null, derniereEle = null;
+
                 for (let i = 0; i < trackPoints.length; i++) {
                     const lat = parseFloat(trackPoints[i].getAttribute("lat"));
                     const lon = parseFloat(trackPoints[i].getAttribute("lon"));
+                    const eleNode = trackPoints[i].getElementsByTagName("ele")[0];
+                    const ele = eleNode ? parseFloat(eleNode.textContent) : 0; // Altitude par défaut 0 si absente
+
                     latlngs.push([lat, lon]);
+
+                    if (derniereLat !== null) {
+                        const dist = calculerDistance(derniereLat, derniereLon, lat, lon);
+                        distanceTotale += dist;
+                        if (ele > derniereEle) {
+                            denivelePositif += (ele - derniereEle); // On cumule seulement quand on monte
+                        }
+                    }
+
+                    // On enregistre les données pour le graphique (tous les points)
+                    labelsDistance.push(distanceTotale.toFixed(1));
+                    dataAltitude.push(ele);
+
+                    derniereLat = lat; derniereLon = lon; derniereEle = ele;
                 }
 
                 if (latlngs.length > 0) {
-                    // Dessiner la ligne rouge sur la carte
-                    const traceGPX = L.polyline(latlngs, {color: 'red', weight: 4}).addTo(map);
-                    // Zoomer automatiquement sur le tracé
-                    map.fitBounds(traceGPX.getBounds());
+                    if (traceGPXLayer) map.removeLayer(traceGPXLayer);
+                    traceGPXLayer = L.polyline(latlngs, {color: 'red', weight: 4}).addTo(map);
+                    map.fitBounds(traceGPXLayer.getBounds());
+
+                    // Mise à jour de l'affichage des chiffres
+                    document.getElementById('stat-dist').innerText = distanceTotale.toFixed(1);
+                    document.getElementById('stat-denivele').innerText = Math.round(denivelePositif);
+
+                    // Affichage du panneau et ajustement de la météo
+                    document.getElementById('gpx-panel').style.display = 'block';
+                    // On remonte un peu le widget météo pour ne pas qu'il cache le graphique
+                    document.getElementById('meteo-widget').style.bottom = '260px'; 
+                    setTimeout(() => map.invalidateSize(), 300); // Recadre la carte après ouverture du panneau
+
+                    genererGraphique(labelsDistance, dataAltitude);
                 } else {
-                    alert("Aucune coordonnée trouvée dans ce fichier GPX.");
+                    alert("Aucune coordonnée trouvée dans ce GPX.");
                 }
             };
             reader.readAsText(file);
         });
 
-        // 3. GESTION DE LA MÉTÉO ET DU GPS
+        // 2. CRÉATION DU GRAPHIQUE CHART.JS
+        function genererGraphique(labels, data) {
+            const ctx = document.getElementById('elevationChart').getContext('2d');
+            if (graphiqueAltitude) graphiqueAltitude.destroy(); // On efface l'ancien s'il y en a un
+
+            graphiqueAltitude = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Altitude (m)',
+                        data: data,
+                        borderColor: '#2980b9',
+                        backgroundColor: 'rgba(41, 128, 185, 0.2)',
+                        borderWidth: 2,
+                        fill: true,
+                        pointRadius: 0, // Cache les petits points pour faire une ligne lisse
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } }, // Cache la légende
+                    scales: {
+                        x: { ticks: { maxTicksLimit: 8 } }, // N'affiche que 8 repères de km
+                        y: { title: { display: true, text: 'Mètres' } }
+                    }
+                }
+            });
+        }
+
+        // 3. MÉTÉO ET GPS
         function obtenirDirectionVent(degres) {
             const directions = ['Nord', 'Nord-Est', 'Est', 'Sud-Est', 'Sud', 'Sud-Ouest', 'Ouest', 'Nord-Ouest'];
             return directions[Math.round(degres / 45) % 8];
@@ -182,63 +264,44 @@
 
         function recupererMeteo(lat, lon) {
             const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${cleAPI}&units=metric&lang=fr`;
+            fetch(url).then(r => r.json()).then(data => {
+                document.getElementById('ville').innerText = data.name;
+                document.getElementById('temperature').innerText = Math.round(data.main.temp);
+                document.getElementById('temp-ressentie').innerText = Math.round(data.main.feels_like);
+                document.getElementById('description').innerText = data.weather[0].description;
+                document.getElementById('icone').src = `https://openweathermap.org/img/wn/${data.weather[0].icon}@2x.png`;
 
-            fetch(url)
-                .then(reponse => reponse.json())
-                .then(data => {
-                    document.getElementById('ville').innerText = data.name;
-                    document.getElementById('temperature').innerText = Math.round(data.main.temp);
-                    document.getElementById('temp-ressentie').innerText = Math.round(data.main.feels_like);
-                    document.getElementById('description').innerText = data.weather[0].description;
-                    
-                    const iconCode = data.weather[0].icon;
-                    document.getElementById('icone').src = `https://openweathermap.org/img/wn/${iconCode}@2x.png`;
-
-                    const vitesseKmh = Math.round(data.wind.speed * 3.6);
-                    const degres = data.wind.deg;
-
-                    document.getElementById('vitesse-vent').innerText = vitesseKmh;
-                    document.getElementById('direction-vent').innerText = obtenirDirectionVent(degres);
-                    document.getElementById('fleche').style.transform = `rotate(${degres}deg)`;
-                    
-                    if (data.wind.gust) {
-                        document.getElementById('rafales-vent').innerText = Math.round(data.wind.gust * 3.6);
-                        document.getElementById('bloc-rafales').style.display = 'block';
-                    } else {
-                        document.getElementById('bloc-rafales').style.display = 'none';
-                    }
-                    
-                    document.getElementById('bloc-infos').style.display = 'block';
-                    document.getElementById('bloc-vent').style.display = 'flex';
-                    document.getElementById('btn-gps').style.display = 'none';
-                })
-                .catch(erreur => {
-                    document.getElementById('message-erreur').innerText = "Erreur de connexion API.";
-                    document.getElementById('btn-gps').innerText = "📍 Réessayer";
-                });
+                const vitesseKmh = Math.round(data.wind.speed * 3.6);
+                const degres = data.wind.deg;
+                document.getElementById('vitesse-vent').innerText = vitesseKmh;
+                document.getElementById('direction-vent').innerText = obtenirDirectionVent(degres);
+                document.getElementById('fleche').style.transform = `rotate(${degres}deg)`;
+                
+                if (data.wind.gust) {
+                    document.getElementById('rafales-vent').innerText = Math.round(data.wind.gust * 3.6);
+                    document.getElementById('bloc-rafales').style.display = 'block';
+                } else {
+                    document.getElementById('bloc-rafales').style.display = 'none';
+                }
+                
+                document.getElementById('bloc-infos').style.display = 'block';
+                document.getElementById('bloc-vent').style.display = 'flex';
+                document.getElementById('btn-gps').style.display = 'none';
+            }).catch(e => {
+                document.getElementById('message-erreur').innerText = "Erreur de connexion API.";
+                document.getElementById('btn-gps').innerText = "📍 Réessayer";
+            });
         }
 
         document.getElementById('btn-gps').addEventListener('click', function() {
             this.innerText = "⏳ Recherche...";
-            document.getElementById('message-erreur').innerText = ""; 
-
             if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(
                     (position) => {
-                        const lat = position.coords.latitude;
-                        const lon = position.coords.longitude;
-                        
-                        // Centrer la carte sur l'utilisateur
+                        const lat = position.coords.latitude, lon = position.coords.longitude;
                         map.setView([lat, lon], 13);
-
-                        // Ajouter ou déplacer le marqueur bleu
-                        if (marqueurGPS) {
-                            marqueurGPS.setLatLng([lat, lon]);
-                        } else {
-                            marqueurGPS = L.marker([lat, lon]).addTo(map);
-                        }
-
-                        // Lancer la météo
+                        if (marqueurGPS) marqueurGPS.setLatLng([lat, lon]);
+                        else marqueurGPS = L.marker([lat, lon]).addTo(map);
                         recupererMeteo(lat, lon);
                     },
                     (erreur) => {
@@ -246,11 +309,8 @@
                         document.getElementById('message-erreur').innerText = "GPS refusé.";
                     }
                 );
-            } else {
-                document.getElementById('message-erreur').innerText = "GPS non supporté.";
             }
         });
     </script>
-
 </body>
 </html>
