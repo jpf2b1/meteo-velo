@@ -180,7 +180,7 @@
                         if (ele > derniereEle) denivelePositif += (ele - derniereEle); 
 
                         if (distanceTotale >= prochainPalierVent) {
-                            pointsVingtKmGlobale.push({ lat: lat, lon: lon, km: prochainPalierVent });
+                            pointsVingtKmGlobale.push({ lat: lat, lon: lon, km: prochainPalierVent, estArrivee: false });
                             prochainPalierVent += 20; 
                         }
                     }
@@ -195,6 +195,21 @@
                     if (traceGPXLayer) map.removeLayer(traceGPXLayer);
                     traceGPXLayer = L.polyline(latlngs, {color: 'red', weight: 4}).addTo(map);
                     map.fitBounds(traceGPXLayer.getBounds());
+
+                    // NOUVEAU : Ajout du point d'arrivée
+                    if (pointsVingtKmGlobale.length > 0) {
+                        const distanceDernierPoint = pointsVingtKmGlobale[pointsVingtKmGlobale.length - 1].km;
+                        // Si le dernier palier est à moins d'1.5 km de l'arrivée, on l'enlève pour éviter la superposition
+                        if (distanceTotale - distanceDernierPoint < 1.5) {
+                            pointsVingtKmGlobale.pop();
+                        }
+                    }
+                    pointsVingtKmGlobale.push({ 
+                        lat: derniereLat, 
+                        lon: derniereLon, 
+                        km: distanceTotale.toFixed(1), 
+                        estArrivee: true 
+                    });
 
                     document.getElementById('stat-dist').innerText = distanceTotale.toFixed(1);
                     document.getElementById('stat-denivele').innerText = Math.round(denivelePositif);
@@ -247,12 +262,17 @@
                     const tempPrevue = Math.round(previsionLaPlusProche.main.temp);
                     const iconCode = previsionLaPlusProche.weather[0].icon;
 
+                    // NOUVEAU : Design spécifique si c'est la ligne d'arrivée
+                    const bordure = pt.estArrivee ? '#27ae60' : '#2980b9'; // Vert pour l'arrivée, Bleu pour le reste
+                    const drapeau = pt.estArrivee ? '🏁 ' : '';
+                    const titrePopup = pt.estArrivee ? `🏁 Arrivée (Km ${pt.km})` : `Km ${pt.km}`;
+
                     const htmlIcone = `
-                        <div style="background: rgba(255,255,255,0.9); border-radius: 50%; width: 34px; height: 34px; display: flex; justify-content: center; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.3); border: 2px solid #2980b9; margin: 0 auto;">
+                        <div style="background: rgba(255,255,255,0.9); border-radius: 50%; width: 34px; height: 34px; display: flex; justify-content: center; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.3); border: 2px solid ${bordure}; margin: 0 auto;">
                             <div style="transform: rotate(${previsionLaPlusProche.wind.deg}deg); font-size: 20px;">⬇</div>
                         </div>
-                        <div style="background: white; border-radius: 4px; font-size: 11px; font-weight: bold; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.3); margin-top: 2px; width: 54px; margin-left: -10px; padding: 2px 0;">
-                            ${vitesseKmh} km/h<br>
+                        <div style="background: white; border-radius: 4px; font-size: 11px; font-weight: bold; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.3); margin-top: 2px; width: 62px; margin-left: -14px; padding: 2px 0; border: 1px solid ${bordure};">
+                            ${drapeau}${vitesseKmh} km/h<br>
                             <span style="color: #e74c3c; font-size: 10px;">🕒 ${heureTexte}</span>
                         </div>
                     `;
@@ -262,7 +282,7 @@
                     
                     marqueur.bindPopup(`
                         <div style="text-align:center;">
-                            <b>Km ${pt.km}</b><br>
+                            <b>${titrePopup}</b><br>
                             <img src="https://openweathermap.org/img/wn/${iconCode}.png" style="width:30px; vertical-align:middle;"> ${tempPrevue}°C
                         </div>
                     `);
