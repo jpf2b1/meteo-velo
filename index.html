@@ -110,7 +110,6 @@
         <div class="stats-gpx">
             <div>📏 <span id="stat-dist">0</span> km</div>
             <div>⛰️ <span id="stat-denivele">0</span> m</div>
-            <!-- NOUVEAU : Champ pour régler la vitesse moyenne -->
             <div>⏱️ Moyenne: <input type="number" id="vitesse-moyenne" class="input-vitesse" value="25" min="10" max="50"> km/h</div>
         </div>
         <div class="chart-container">
@@ -121,7 +120,6 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <script>
-        // Votre clé est maintenant intégrée directement !
         const cleAPI = 'd987d1ede347de41baa4bbd51ac41450'; 
 
         const map = L.map('map', {zoomControl: false}).setView([46.603354, 1.888334], 6);
@@ -134,7 +132,6 @@
         let donneesGPX = []; 
         let indexPositionCycliste = null; 
         
-        // Variable globale pour mémoriser les points de relevé météo
         let pointsVingtKmGlobale = [];
 
         function calculerDistance(lat1, lon1, lat2, lon2) {
@@ -212,7 +209,6 @@
             reader.readAsText(file);
         });
 
-        // Relancer le calcul si on modifie la vitesse moyenne manuellement
         document.getElementById('vitesse-moyenne').addEventListener('change', function() {
             if (pointsVingtKmGlobale.length > 0) {
                 ajouterVentSurParcours(pointsVingtKmGlobale);
@@ -223,20 +219,16 @@
             marqueursVentParcours.forEach(m => map.removeLayer(m));
             marqueursVentParcours = [];
 
-            // Récupération de la vitesse moyenne saisie (par défaut 25 km/h)
             const vitesseMoyenne = parseFloat(document.getElementById('vitesse-moyenne').value) || 25;
-            const tempsActuelUnx = Math.floor(Date.now() / 1000); // Temps actuel en secondes
+            const tempsActuelUnx = Math.floor(Date.now() / 1000); 
 
             points.forEach(pt => {
-                // Calcul de l'heure d'arrivée estimée à ce point (Distance / Vitesse = Heures)
                 const tempsParcoursSecondes = (pt.km / vitesseMoyenne) * 3600;
                 const heureArriveeEstimee = tempsActuelUnx + tempsParcoursSecondes;
 
-                // NOUVEAU : Appel à l'API "forecast" (prévisions sur 5 jours / toutes les 3h)
                 const url = `https://api.openweathermap.org/data/2.5/forecast?lat=${pt.lat}&lon=${pt.lon}&appid=${cleAPI}&units=metric&lang=fr`;
                 
                 fetch(url).then(r => r.json()).then(data => {
-                    // On cherche la prévision dont l'heure correspond le plus à notre passage
                     let previsionLaPlusProche = data.list[0];
                     let differenceMini = Math.abs(previsionLaPlusProche.dt - heureArriveeEstimee);
                     
@@ -248,7 +240,6 @@
                         }
                     }
 
-                    // Formatage de l'heure d'arrivée pour le popup
                     const dateArrivee = new Date(heureArriveeEstimee * 1000);
                     const heureTexte = dateArrivee.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
                     
@@ -256,25 +247,24 @@
                     const tempPrevue = Math.round(previsionLaPlusProche.main.temp);
                     const iconCode = previsionLaPlusProche.weather[0].icon;
 
+                    // NOUVEAU : Intégration de l'heure directement dans l'étiquette sous le cercle
                     const htmlIcone = `
-                        <div style="background: rgba(255,255,255,0.9); border-radius: 50%; width: 34px; height: 34px; display: flex; justify-content: center; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.3); border: 2px solid #2980b9;">
+                        <div style="background: rgba(255,255,255,0.9); border-radius: 50%; width: 34px; height: 34px; display: flex; justify-content: center; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.3); border: 2px solid #2980b9; margin: 0 auto;">
                             <div style="transform: rotate(${previsionLaPlusProche.wind.deg}deg); font-size: 20px;">⬇</div>
                         </div>
-                        <div style="background: white; border-radius: 4px; font-size: 11px; font-weight: bold; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.3); margin-top: 2px; width: 44px; margin-left: -5px; padding: 1px 0;">
-                            ${vitesseKmh} km/h
+                        <div style="background: white; border-radius: 4px; font-size: 11px; font-weight: bold; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.3); margin-top: 2px; width: 54px; margin-left: -10px; padding: 2px 0;">
+                            ${vitesseKmh} km/h<br>
+                            <span style="color: #e74c3c; font-size: 10px;">🕒 ${heureTexte}</span>
                         </div>
                     `;
                     
-                    const ventIcon = L.divIcon({ html: htmlIcone, className: 'custom-vent-icon', iconSize: [34, 50], iconAnchor: [17, 25] });
+                    const ventIcon = L.divIcon({ html: htmlIcone, className: 'custom-vent-icon', iconSize: [34, 60], iconAnchor: [17, 25] });
                     const marqueur = L.marker([pt.lat, pt.lon], {icon: ventIcon}).addTo(map);
                     
-                    // Le popup indique maintenant l'heure de passage prévue et la météo à ce moment
                     marqueur.bindPopup(`
                         <div style="text-align:center;">
                             <b>Km ${pt.km}</b><br>
-                            Passage vers <b>${heureTexte}</b><br>
-                            <img src="https://openweathermap.org/img/wn/${iconCode}.png" style="width:30px; vertical-align:middle;"> ${tempPrevue}°C<br>
-                            Vent : ${vitesseKmh} km/h
+                            <img src="https://openweathermap.org/img/wn/${iconCode}.png" style="width:30px; vertical-align:middle;"> ${tempPrevue}°C
                         </div>
                     `);
                     marqueursVentParcours.push(marqueur); 
@@ -353,66 +343,5 @@
             return directions[Math.round(degres / 45) % 8];
         }
 
-        // La météo de la position actuelle reste en temps réel (weather)
         function recupererMeteo(lat, lon) {
-            const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${cleAPI}&units=metric&lang=fr`;
-            fetch(url).then(r => r.json()).then(data => {
-                document.getElementById('ville').innerText = data.name;
-                document.getElementById('temperature').innerText = Math.round(data.main.temp);
-                document.getElementById('temp-ressentie').innerText = Math.round(data.main.feels_like);
-                document.getElementById('description').innerText = data.weather[0].description;
-                document.getElementById('icone').src = `https://openweathermap.org/img/wn/${data.weather[0].icon}@2x.png`;
-
-                const vitesseKmh = Math.round(data.wind.speed * 3.6);
-                const degres = data.wind.deg;
-                document.getElementById('vitesse-vent').innerText = vitesseKmh;
-                document.getElementById('direction-vent').innerText = obtenirDirectionVent(degres);
-                document.getElementById('fleche').style.transform = `rotate(${degres}deg)`;
-                
-                if (data.wind.gust) {
-                    document.getElementById('rafales-vent').innerText = Math.round(data.wind.gust * 3.6);
-                    document.getElementById('bloc-rafales').style.display = 'block';
-                } else {
-                    document.getElementById('bloc-rafales').style.display = 'none';
-                }
-                
-                document.getElementById('bloc-infos').style.display = 'block';
-                document.getElementById('bloc-vent').style.display = 'flex';
-                
-                document.getElementById('btn-gps').innerText = "🔄 Actualiser ma position";
-            }).catch(e => {
-                document.getElementById('message-erreur').innerText = "Erreur de connexion API.";
-                document.getElementById('btn-gps').innerText = "📍 Réessayer";
-            });
-        }
-
-        document.getElementById('btn-gps').addEventListener('click', function() {
-            this.innerText = "⏳ Recherche...";
-            document.getElementById('message-erreur').innerText = ""; 
-
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(
-                    (position) => {
-                        const lat = position.coords.latitude;
-                        const lon = position.coords.longitude;
-                        
-                        map.setView([lat, lon], 13);
-                        
-                        if (marqueurGPS) marqueurGPS.setLatLng([lat, lon]);
-                        else marqueurGPS = L.marker([lat, lon]).addTo(map);
-                        
-                        placerCyclisteSurGraphique(lat, lon);
-                        recupererMeteo(lat, lon);
-                    },
-                    (erreur) => {
-                        this.innerText = "📍 Ma position & Météo";
-                        document.getElementById('message-erreur').innerText = "GPS refusé.";
-                    }
-                );
-            } else {
-                document.getElementById('message-erreur').innerText = "GPS non supporté.";
-            }
-        });
-    </script>
-</body>
-</html>
+            const url = `
