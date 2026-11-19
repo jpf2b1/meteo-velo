@@ -50,7 +50,7 @@
             transition: bottom 0.3s ease;
         }
 
-        h1 { margin: 0; font-size: 22px; color: #2c3e50; }
+        h1 { margin: 0; font-size: 22px; color: #2c3e50; margin-bottom: 10px;}
         .temp { font-size: 48px; font-weight: bold; color: #2980b9; margin: 0; }
         .ressenti { font-size: 14px; color: #2c3e50; font-weight: 600; margin-bottom: 5px; opacity: 0.8; }
         .rafales { font-size: 13px; color: #c0392b; font-weight: bold; margin-top: 4px; }
@@ -64,7 +64,6 @@
         .fleche-vent { display: inline-block; font-size: 20px; transition: transform 0.5s ease; }
         .erreur { color: #d32f2f; font-weight: bold; margin-top: 10px; font-size: 13px;}
 
-        /* NOUVEAU : On s'assure que le fond des icônes Leaflet est transparent */
         .leaflet-div-icon { background: transparent; border: none; }
     </style>
 </head>
@@ -79,7 +78,7 @@
 
     <div class="meteo-carte" id="meteo-widget">
         <h1 id="ville">Météo Vélo</h1>
-        <button id="btn-gps" class="btn-action" style="margin-top: 10px; width: 100%;">📍 Ma position & Météo</button>
+        <button id="btn-gps" class="btn-action" style="width: 100%; margin-bottom: 10px;">📍 Ma position & Météo</button>
 
         <div id="bloc-infos" style="display: none;">
             <div style="display: flex; justify-content: center; align-items: center; gap: 10px;">
@@ -124,7 +123,10 @@
         let marqueurGPS = null;
         let traceGPXLayer = null;
         let graphiqueAltitude = null;
-        let marqueursVentParcours = []; // Pour stocker et effacer les marqueurs de vent
+        let marqueursVentParcours = []; 
+        
+        let donneesGPX = []; 
+        let indexPositionCycliste = null; 
 
         function calculerDistance(lat1, lon1, lat2, lon2) {
             const R = 6371; 
@@ -152,10 +154,11 @@
                 let distanceTotale = 0;
                 let denivelePositif = 0;
                 let derniereLat = null, derniereLon = null, derniereEle = null;
-
-                // NOUVEAU : Variables pour traquer les paliers de 20 km
                 let prochainPalierVent = 20; 
-                let pointsVingtKm = []; // On y mettra les coordonnées tous les 20km
+                let pointsVingtKm = []; 
+                
+                donneesGPX = [];
+                indexPositionCycliste = null;
 
                 for (let i = 0; i < trackPoints.length; i++) {
                     const lat = parseFloat(trackPoints[i].getAttribute("lat"));
@@ -170,12 +173,13 @@
                         distanceTotale += dist;
                         if (ele > derniereEle) denivelePositif += (ele - derniereEle); 
 
-                        // NOUVEAU : Si on dépasse un palier de 20km, on enregistre le point
                         if (distanceTotale >= prochainPalierVent) {
                             pointsVingtKm.push({ lat: lat, lon: lon, km: prochainPalierVent });
-                            prochainPalierVent += 20; // On prépare le prochain cap (40, 60...)
+                            prochainPalierVent += 20; 
                         }
                     }
+
+                    donneesGPX.push({ lat: lat, lon: lon, distance: distanceTotale });
 
                     labelsDistance.push(distanceTotale.toFixed(1));
                     dataAltitude.push(ele);
@@ -194,55 +198,61 @@
                     setTimeout(() => map.invalidateSize(), 300); 
 
                     genererGraphique(labelsDistance, dataAltitude);
-                    
-                    // NOUVEAU : On lance la recherche météo sur les points kilométriques
                     ajouterVentSurParcours(pointsVingtKm);
                 }
             };
             reader.readAsText(file);
         });
 
-        // NOUVEAU : Fonction pour interroger l'API et afficher les marqueurs
         function ajouterVentSurParcours(points) {
-            // 1. On nettoie les anciens marqueurs si on charge un nouveau tracé
-            marqueursVentParcours.forEach(marqueur => map.removeLayer(marqueur));
+            marqueursVentParcours.forEach(m => map.removeLayer(m));
             marqueursVentParcours = [];
 
-            // 2. Pour chaque point kilométrique enregistré (20, 40, 60...)
             points.forEach(pt => {
                 const url = `https://api.openweathermap.org/data/2.5/weather?lat=${pt.lat}&lon=${pt.lon}&appid=${cleAPI}&units=metric`;
-                
                 fetch(url).then(r => r.json()).then(data => {
-                    const vitesseKmh = Math.round(data.wind.speed * 3.6);
-                    const degres = data.wind.deg;
-
-                    // Création d'une icône HTML personnalisée avec la flèche qui tourne
                     const htmlIcone = `
                         <div style="background: rgba(255,255,255,0.9); border-radius: 50%; width: 34px; height: 34px; display: flex; justify-content: center; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.3); border: 2px solid #2980b9;">
-                            <div style="transform: rotate(${degres}deg); font-size: 20px;">⬇</div>
+                            <div style="transform: rotate(${data.wind.deg}deg); font-size: 20px;">⬇</div>
                         </div>
                         <div style="background: white; border-radius: 4px; font-size: 11px; font-weight: bold; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.3); margin-top: 2px; width: 44px; margin-left: -5px; padding: 1px 0;">
-                            ${vitesseKmh} km/h
+                            ${Math.round(data.wind.speed * 3.6)} km/h
                         </div>
                     `;
-
-                    const ventIcon = L.divIcon({
-                        html: htmlIcone,
-                        className: 'custom-vent-icon',
-                        iconSize: [34, 50],
-                        iconAnchor: [17, 25] // Centre l'icône sur le tracé
-                    });
-
-                    // On place le marqueur sur la carte
+                    const ventIcon = L.divIcon({ html: htmlIcone, className: 'custom-vent-icon', iconSize: [34, 50], iconAnchor: [17, 25] });
                     const marqueur = L.marker([pt.lat, pt.lon], {icon: ventIcon}).addTo(map);
-                    
-                    // Si on clique dessus, ça donne le kilométrage
-                    marqueur.bindPopup(`<b>Kilomètre ${pt.km}</b><br>Vent : ${vitesseKmh} km/h`);
-                    
-                    marqueursVentParcours.push(marqueur); // On le sauvegarde pour pouvoir l'effacer plus tard
+                    marqueur.bindPopup(`<b>Km ${pt.km}</b>`);
+                    marqueursVentParcours.push(marqueur); 
                 });
             });
         }
+
+        // NOUVEAU : Plugin mis à jour pour dessiner un joli point rouge sur la courbe
+        const pluginPositionCycliste = {
+            id: 'pointCycliste',
+            afterDraw: (chart) => {
+                if (indexPositionCycliste !== null && indexPositionCycliste >= 0) {
+                    const ctx = chart.ctx;
+                    const meta = chart.getDatasetMeta(0);
+                    const point = meta.data[indexPositionCycliste];
+                    
+                    if(point) {
+                        ctx.save();
+                        ctx.beginPath();
+                        // Dessin du cercle (x, y, rayon, angle de départ, angle de fin)
+                        ctx.arc(point.x, point.y, 6, 0, 2 * Math.PI);
+                        ctx.fillStyle = '#e74c3c'; // Rouge
+                        ctx.fill();
+                        
+                        // Bordure blanche autour du point rouge
+                        ctx.lineWidth = 2;
+                        ctx.strokeStyle = '#ffffff';
+                        ctx.stroke();
+                        ctx.restore();
+                    }
+                }
+            }
+        };
 
         function genererGraphique(labels, data) {
             const ctx = document.getElementById('elevationChart').getContext('2d');
@@ -259,8 +269,33 @@
                 options: {
                     responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, 
                     scales: { x: { ticks: { maxTicksLimit: 8 } }, y: { title: { display: true, text: 'Mètres' } } }
+                },
+                plugins: [pluginPositionCycliste]
+            });
+        }
+
+        function placerCyclisteSurGraphique(lat, lon) {
+            if (donneesGPX.length === 0 || !graphiqueAltitude) return;
+            
+            let distanceMin = Infinity;
+            let meilleurIndex = -1;
+            
+            donneesGPX.forEach((pt, index) => {
+                let d = calculerDistance(lat, lon, pt.lat, pt.lon);
+                if (d < distanceMin) {
+                    distanceMin = d;
+                    meilleurIndex = index;
                 }
             });
+            
+            // Si à moins de 3km du parcours, on place le point rouge
+            if (distanceMin <= 3.0) {
+                indexPositionCycliste = meilleurIndex;
+            } else {
+                indexPositionCycliste = null; 
+            }
+            
+            graphiqueAltitude.update(); 
         }
 
         function obtenirDirectionVent(degres) {
@@ -292,7 +327,8 @@
                 
                 document.getElementById('bloc-infos').style.display = 'block';
                 document.getElementById('bloc-vent').style.display = 'flex';
-                document.getElementById('btn-gps').style.display = 'none';
+                
+                document.getElementById('btn-gps').innerText = "🔄 Actualiser ma position";
             }).catch(e => {
                 document.getElementById('message-erreur').innerText = "Erreur de connexion API.";
                 document.getElementById('btn-gps').innerText = "📍 Réessayer";
@@ -301,13 +337,22 @@
 
         document.getElementById('btn-gps').addEventListener('click', function() {
             this.innerText = "⏳ Recherche...";
+            document.getElementById('message-erreur').innerText = ""; 
+
             if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(
                     (position) => {
-                        const lat = position.coords.latitude, lon = position.coords.longitude;
+                        const lat = position.coords.latitude;
+                        const lon = position.coords.longitude;
+                        
                         map.setView([lat, lon], 13);
+                        
                         if (marqueurGPS) marqueurGPS.setLatLng([lat, lon]);
                         else marqueurGPS = L.marker([lat, lon]).addTo(map);
+                        
+                        // C'est ici que l'on met à jour le point rouge !
+                        placerCyclisteSurGraphique(lat, lon);
+                        
                         recupererMeteo(lat, lon);
                     },
                     (erreur) => {
@@ -315,6 +360,8 @@
                         document.getElementById('message-erreur').innerText = "GPS refusé.";
                     }
                 );
+            } else {
+                document.getElementById('message-erreur').innerText = "GPS non supporté.";
             }
         });
     </script>
