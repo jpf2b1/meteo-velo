@@ -133,6 +133,9 @@
         let indexPositionCycliste = null; 
         
         let pointsVingtKmGlobale = [];
+        
+        // NOUVEAU : Mémoire de notre avancée sur le parcours
+        let distanceCyclisteActuelle = 0; 
 
         function calculerDistance(lat1, lon1, lat2, lon2) {
             const R = 6371; 
@@ -165,6 +168,7 @@
                 pointsVingtKmGlobale = []; 
                 donneesGPX = [];
                 indexPositionCycliste = null;
+                distanceCyclisteActuelle = 0; // Remise à zéro au chargement
 
                 for (let i = 0; i < trackPoints.length; i++) {
                     const lat = parseFloat(trackPoints[i].getAttribute("lat"));
@@ -196,19 +200,15 @@
                     traceGPXLayer = L.polyline(latlngs, {color: 'red', weight: 4}).addTo(map);
                     map.fitBounds(traceGPXLayer.getBounds());
 
-                    // NOUVEAU : Ajout du point d'arrivée
                     if (pointsVingtKmGlobale.length > 0) {
                         const distanceDernierPoint = pointsVingtKmGlobale[pointsVingtKmGlobale.length - 1].km;
-                        // Si le dernier palier est à moins d'1.5 km de l'arrivée, on l'enlève pour éviter la superposition
                         if (distanceTotale - distanceDernierPoint < 1.5) {
                             pointsVingtKmGlobale.pop();
                         }
                     }
                     pointsVingtKmGlobale.push({ 
-                        lat: derniereLat, 
-                        lon: derniereLon, 
-                        km: distanceTotale.toFixed(1), 
-                        estArrivee: true 
+                        lat: derniereLat, lon: derniereLon, 
+                        km: distanceTotale.toFixed(1), estArrivee: true 
                     });
 
                     document.getElementById('stat-dist').innerText = distanceTotale.toFixed(1);
@@ -238,7 +238,30 @@
             const tempsActuelUnx = Math.floor(Date.now() / 1000); 
 
             points.forEach(pt => {
-                const tempsParcoursSecondes = (pt.km / vitesseMoyenne) * 3600;
+                
+                // NOUVEAU : Si on a déjà dépassé ce point, on affiche un "Passé" au lieu de calculer
+                // (marge de 0.5km pour ne pas effacer un point si on est juste dessus)
+                if (pt.km < distanceCyclisteActuelle - 0.5) {
+                    const htmlPasse = `
+                        <div style="background: #bdc3c7; border-radius: 50%; width: 24px; height: 24px; display: flex; justify-content: center; align-items: center; border: 2px solid #95a5a6; margin: 0 auto; opacity: 0.8;">
+                            <span style="font-size: 12px;">✅</span>
+                        </div>
+                        <div style="background: rgba(255,255,255,0.8); border-radius: 4px; font-size: 9px; font-weight: bold; text-align: center; margin-top: 2px; width: 40px; margin-left: -8px; color: #7f8c8d;">
+                            Km ${pt.km}
+                        </div>
+                    `;
+                    const iconPasse = L.divIcon({ html: htmlPasse, className: 'custom-vent-icon', iconSize: [24, 40], iconAnchor: [12, 20] });
+                    const marqueur = L.marker([pt.lat, pt.lon], {icon: iconPasse}).addTo(map);
+                    marqueur.bindPopup("Point kilométrique dépassé.");
+                    marqueursVentParcours.push(marqueur);
+                    return; // On arrête là pour ce point, on ne charge pas la météo
+                }
+
+                // NOUVEAU : On calcule la distance qu'il RESTE à parcourir jusqu'à ce point
+                const distanceRestante = pt.km - distanceCyclisteActuelle;
+                const tempsParcoursSecondes = (distanceRestante / vitesseMoyenne) * 3600;
+                
+                // L'heure estimée est donc : Heure ACTUELLE + Temps pour faire la distance restante
                 const heureArriveeEstimee = tempsActuelUnx + tempsParcoursSecondes;
 
                 const url = `https://api.openweathermap.org/data/2.5/forecast?lat=${pt.lat}&lon=${pt.lon}&appid=${cleAPI}&units=metric&lang=fr`;
@@ -262,8 +285,7 @@
                     const tempPrevue = Math.round(previsionLaPlusProche.main.temp);
                     const iconCode = previsionLaPlusProche.weather[0].icon;
 
-                    // NOUVEAU : Design spécifique si c'est la ligne d'arrivée
-                    const bordure = pt.estArrivee ? '#27ae60' : '#2980b9'; // Vert pour l'arrivée, Bleu pour le reste
+                    const bordure = pt.estArrivee ? '#27ae60' : '#2980b9'; 
                     const drapeau = pt.estArrivee ? '🏁 ' : '';
                     const titrePopup = pt.estArrivee ? `🏁 Arrivée (Km ${pt.km})` : `Km ${pt.km}`;
 
@@ -334,8 +356,9 @@
             });
         }
 
+        // NOUVEAU : Cette fonction retourne un booléen (vrai si on est sur la trace)
         function placerCyclisteSurGraphique(lat, lon) {
-            if (donneesGPX.length === 0 || !graphiqueAltitude) return;
+            if (donneesGPX.length === 0 || !graphiqueAltitude) return false;
             
             let distanceMin = Infinity;
             let meilleurIndex = -1;
@@ -348,13 +371,16 @@
                 }
             });
             
-            if (distanceMin <= 3.0) {
+            if (distanceMin <= 3.0) { // Si on est à moins de 3km de la trace
                 indexPositionCycliste = meilleurIndex;
+                distanceCyclisteActuelle = donneesGPX[meilleurIndex].distance; // On sauvegarde où on est
             } else {
                 indexPositionCycliste = null; 
+                distanceCyclisteActuelle = 0; // Hors trace
             }
             
             graphiqueAltitude.update(); 
+            return distanceMin <= 3.0;
         }
 
         function obtenirDirectionVent(degres) {
@@ -409,7 +435,14 @@
                         if (marqueurGPS) marqueurGPS.setLatLng([lat, lon]);
                         else marqueurGPS = L.marker([lat, lon]).addTo(map);
                         
-                        placerCyclisteSurGraphique(lat, lon);
+                        // 1. On place le point rouge ET on récupère notre distance
+                        const estSurParcours = placerCyclisteSurGraphique(lat, lon);
+                        
+                        // 2. Si on est sur le parcours, on met à jour les heures des bulles en fonction de notre avancée !
+                        if (estSurParcours && pointsVingtKmGlobale.length > 0) {
+                            ajouterVentSurParcours(pointsVingtKmGlobale);
+                        }
+
                         recupererMeteo(lat, lon);
                     },
                     (erreur) => {
