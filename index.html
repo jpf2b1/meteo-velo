@@ -1,3 +1,4 @@
+HTML
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -5,10 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Météo & Traceur Vélo</title>
     
-    <!-- Liens pour transformer le site en Application (PWA) -->
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#2980b9">
-    <!-- CORRECTION ICI : l'icône est maintenant en .jpg -->
     <link rel="apple-touch-icon" href="icon-192.jpg">
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -26,7 +25,8 @@
         #map { flex: 1; width: 100%; z-index: 1; }
 
         #gpx-panel {
-            display: none; height: 260px; background: white;
+            /* Légèrement agrandi pour faire de la place à la légende */
+            display: none; height: 280px; background: white;
             border-top: 2px solid #2980b9; box-shadow: 0 -4px 10px rgba(0,0,0,0.1);
             padding: 10px; box-sizing: border-box; z-index: 1000;
         }
@@ -41,7 +41,12 @@
             border-radius: 4px; padding: 2px; font-weight: bold; color: #2980b9;
         }
 
-        .chart-container { position: relative; height: 170px; width: 100%; margin-top: 5px;}
+        .chart-container { position: relative; height: 165px; width: 100%; margin-top: 5px;}
+
+        /* NOUVEAU : Style de la légende des pentes */
+        .legende-pente {
+            text-align: center; font-size: 11px; margin-top: 8px; font-weight: bold; color: #7f8c8d;
+        }
 
         .top-controls {
             position: absolute; top: 15px; left: 50%; transform: translateX(-50%); z-index: 1000;
@@ -121,11 +126,18 @@
         <div class="stats-gpx">
             <div>📏 <span id="stat-dist">0</span> km</div>
             <div>⛰️ <span id="stat-denivele">0</span> m</div>
-            <div>⏱️ Moyenne: <input type="number" id="vitesse-moyenne" class="input-vitesse" value="25" min="10" max="50"> km/h</div>
+            <div>⏱️ Moy: <input type="number" id="vitesse-moyenne" class="input-vitesse" value="25" min="10" max="50"> km/h</div>
             <button id="btn-reset-zoom" class="btn-reset">🔍 Rétablir</button>
         </div>
         <div class="chart-container">
             <canvas id="elevationChart"></canvas>
+        </div>
+        <!-- Légende des couleurs -->
+        <div class="legende-pente">
+            <span style="color:#3498db">■</span> Descente 
+            <span style="color:#27ae60; margin-left: 8px;">■</span> < 3% 
+            <span style="color:#f39c12; margin-left: 8px;">■</span> 3-7% 
+            <span style="color:#e74c3c; margin-left: 8px;">■</span> > 7%
         </div>
     </div>
 
@@ -170,6 +182,7 @@
                 let latlngs = [];
                 let labelsDistance = [];
                 let dataAltitude = [];
+                let rawDistances = []; // NOUVEAU : Pour calculer les pourcentages avec précision
                 let distanceTotale = 0;
                 let denivelePositif = 0;
                 let derniereLat = null, derniereLon = null, derniereEle = null;
@@ -202,6 +215,7 @@
                     donneesGPX.push({ lat: lat, lon: lon, distance: distanceTotale });
                     labelsDistance.push(distanceTotale.toFixed(1));
                     dataAltitude.push(ele);
+                    rawDistances.push(distanceTotale); 
                     derniereLat = lat; derniereLon = lon; derniereEle = ele;
                 }
 
@@ -227,7 +241,8 @@
                     
                     setTimeout(() => map.invalidateSize(), 300); 
 
-                    genererGraphique(labelsDistance, dataAltitude);
+                    // On envoie désormais rawDistances à la fonction graphique
+                    genererGraphique(labelsDistance, dataAltitude, rawDistances);
                     ajouterVentSurParcours(pointsVingtKmGlobale);
                 }
             };
@@ -347,7 +362,8 @@
             }
         };
 
-        function genererGraphique(labels, data) {
+        // NOUVEAU : La fonction graphique calcule la couleur du trait selon le % de pente
+        function genererGraphique(labels, data, rawDistances) {
             const ctx = document.getElementById('elevationChart').getContext('2d');
             if (graphiqueAltitude) graphiqueAltitude.destroy(); 
             
@@ -356,8 +372,31 @@
                 data: {
                     labels: labels,
                     datasets: [{
-                        label: 'Altitude', data: data, borderColor: '#2980b9', backgroundColor: 'rgba(41, 128, 185, 0.2)',
-                        borderWidth: 2, fill: true, pointRadius: 0, tension: 0.1
+                        label: 'Altitude', 
+                        data: data, 
+                        borderWidth: 3, // Trait un peu plus épais pour bien voir la couleur
+                        backgroundColor: 'rgba(189, 195, 199, 0.2)', // Remplissage gris clair neutre
+                        fill: true, pointRadius: 0, tension: 0.1,
+                        segment: {
+                            borderColor: contexte => {
+                                if (!rawDistances) return '#27ae60'; // Par défaut
+                                const index = contexte.p0DataIndex;
+                                // Calcul de la distance du segment en mètres
+                                const distanceMetres = (rawDistances[index + 1] - rawDistances[index]) * 1000;
+                                if (distanceMetres <= 0.1) return '#27ae60';
+                                
+                                // Calcul du dénivelé du segment
+                                const deniveleMetres = data[index + 1] - data[index];
+                                
+                                // Calcul du pourcentage de la pente
+                                const pente = (deniveleMetres / distanceMetres) * 100;
+
+                                if (pente < -1) return '#3498db'; // Descente = Bleu
+                                if (pente < 3) return '#27ae60';  // Jusqu'à 3% = Vert
+                                if (pente < 7) return '#f39c12';  // De 3 à 7% = Orange
+                                return '#e74c3c';                 // Au-delà de 7% = Rouge
+                            }
+                        }
                     }]
                 },
                 options: {
@@ -481,7 +520,6 @@
             }
         });
         
-        // Enregistrement du Service Worker pour la PWA
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('sw.js')
