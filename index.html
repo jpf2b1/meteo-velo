@@ -10,7 +10,7 @@
 
     <style>
         body, html {
-            margin: 0; padding: 0; height: 100vh;
+            margin: 0; padding: 0; height: 100%; width: 100%;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             display: flex; flex-direction: column; overflow: hidden;
         }
@@ -247,7 +247,6 @@
                     const tempPrevue = Math.round(previsionLaPlusProche.main.temp);
                     const iconCode = previsionLaPlusProche.weather[0].icon;
 
-                    // NOUVEAU : Intégration de l'heure directement dans l'étiquette sous le cercle
                     const htmlIcone = `
                         <div style="background: rgba(255,255,255,0.9); border-radius: 50%; width: 34px; height: 34px; display: flex; justify-content: center; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.3); border: 2px solid #2980b9; margin: 0 auto;">
                             <div style="transform: rotate(${previsionLaPlusProche.wind.deg}deg); font-size: 20px;">⬇</div>
@@ -344,4 +343,15 @@
         }
 
         function recupererMeteo(lat, lon) {
-            const url = `
+            const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${cleAPI}&units=metric&lang=fr`;
+            fetch(url).then(r => r.json()).then(data => {
+                document.getElementById('ville').innerText = data.name;
+                document.getElementById('temperature').innerText = Math.round(data.main.temp);
+                document.getElementById('temp-ressentie').innerText = Math.round(data.main.feels_like);
+                document.getElementById('description').innerText = data.weather[0].description;
+                document.getElementById('icone').src = `https://openweathermap.org/img/wn/${data.weather[0].icon}@2x.png`;
+
+                const vitesseKmh = Math.round(data.wind.speed * 3.6);
+                const degres = data.wind.deg;
+                document.getElementById('vitesse-vent').innerText = vitesseKmh;
+                document.getElementById('
