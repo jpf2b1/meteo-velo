@@ -5,9 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Météo & Traceur Vélo</title>
     
+    <!-- Liens pour transformer le site en Application (PWA) -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#2980b9">
+    <!-- CORRECTION ICI : l'icône est maintenant en .jpg -->
+    <link rel="apple-touch-icon" href="icon-192.jpg">
+    
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- NOUVEAU : Bibliothèques pour le zoom tactile sur le graphique -->
     <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 
@@ -117,7 +122,6 @@
             <div>📏 <span id="stat-dist">0</span> km</div>
             <div>⛰️ <span id="stat-denivele">0</span> m</div>
             <div>⏱️ Moyenne: <input type="number" id="vitesse-moyenne" class="input-vitesse" value="25" min="10" max="50"> km/h</div>
-            <!-- NOUVEAU : Bouton pour rétablir le zoom -->
             <button id="btn-reset-zoom" class="btn-reset">🔍 Rétablir</button>
         </div>
         <div class="chart-container">
@@ -236,7 +240,6 @@
             }
         });
 
-        // NOUVEAU : Écouteur pour le bouton de réinitialisation du zoom
         document.getElementById('btn-reset-zoom').addEventListener('click', function() {
             if (graphiqueAltitude) {
                 graphiqueAltitude.resetZoom();
@@ -348,7 +351,6 @@
             const ctx = document.getElementById('elevationChart').getContext('2d');
             if (graphiqueAltitude) graphiqueAltitude.destroy(); 
             
-            // NOUVEAU : Configuration du plugin Zoom ajoutée aux options
             graphiqueAltitude = new Chart(ctx, {
                 type: 'line',
                 data: {
@@ -478,6 +480,15 @@
                 document.getElementById('meteo-widget').style.display = 'block';
             }
         });
+        
+        // Enregistrement du Service Worker pour la PWA
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js')
+                .then(reg => console.log('Service Worker enregistré !'))
+                .catch(err => console.log('Erreur Service Worker :', err));
+            });
+        }
     </script>
 </body>
 </html>
