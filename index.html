@@ -35,71 +35,72 @@
 
         .chart-container { position: relative; height: 170px; width: 100%; margin-top: 5px;}
 
-        .btn-gpx-container {
-            position: absolute; top: 20px; left: 50%; transform: translateX(-50%); z-index: 1000;
+        /* NOUVEAU : Barre de boutons en haut */
+        .top-controls {
+            position: absolute; top: 15px; left: 50%; transform: translateX(-50%); z-index: 1000;
+            display: flex; gap: 10px; width: 95%; max-width: 400px;
         }
 
         .btn-action {
-            background-color: #2980b9; color: white; border: none; padding: 12px 20px;
-            border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.3); display: inline-block; text-align: center;
+            flex: 1; /* Les boutons se partagent l'espace à 50/50 */
+            background-color: #2980b9; color: white; border: none; padding: 12px 5px;
+            border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3); text-align: center;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
         .btn-action:active { background-color: #2471a3; transform: translateY(2px); }
 
+        /* L'encart météo est maintenant positionné en haut sous les boutons */
         .meteo-carte {
-            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 1000;
+            position: absolute; top: 75px; left: 50%; transform: translateX(-50%); z-index: 1000;
             background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(10px);
-            border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.5);
-            padding: 20px; text-align: center; width: 85%; max-width: 350px;
+            border-radius: 15px; border: 1px solid rgba(255, 255, 255, 0.5);
+            padding: 15px; text-align: center; width: 85%; max-width: 320px;
             box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3); color: #333;
-            transition: bottom 0.3s ease;
         }
 
-        h1 { margin: 0; font-size: 22px; color: #2c3e50; margin-bottom: 10px;}
-        .temp { font-size: 48px; font-weight: bold; color: #2980b9; margin: 0; }
+        .temp { font-size: 42px; font-weight: bold; color: #2980b9; margin: 0; }
         .ressenti { font-size: 14px; color: #2c3e50; font-weight: 600; margin-bottom: 5px; opacity: 0.8; }
         .rafales { font-size: 13px; color: #c0392b; font-weight: bold; margin-top: 4px; }
         .desc { font-size: 16px; text-transform: capitalize; color: #2c3e50; font-weight: 500; margin-bottom: 10px; }
         
         .vent-box {
-            background: rgba(255, 255, 255, 0.6); border-radius: 12px; padding: 10px; display: none;
+            background: rgba(255, 255, 255, 0.6); border-radius: 12px; padding: 10px; display: flex;
             justify-content: space-around; align-items: center; font-size: 14px; color: #2c3e50; font-weight: 600;
         }
 
         .fleche-vent { display: inline-block; font-size: 20px; transition: transform 0.5s ease; }
-        .erreur { color: #d32f2f; font-weight: bold; margin-top: 10px; font-size: 13px;}
+        .erreur { color: #d32f2f; font-weight: bold; margin-top: 5px; font-size: 13px;}
 
         .leaflet-div-icon { background: transparent; border: none; }
     </style>
 </head>
 <body>
 
-    <div class="btn-gpx-container">
+    <!-- Barre de boutons du haut -->
+    <div class="top-controls">
         <label class="btn-action">
-            📂 Charger un GPX
+            📂 Charger GPX
             <input type="file" id="gpx-input" accept=".gpx" style="display:none;">
         </label>
+        <button id="btn-gps" class="btn-action">📍 Ma Position</button>
     </div>
 
-    <div class="meteo-carte" id="meteo-widget">
-        <h1 id="ville">Météo Vélo</h1>
-        <button id="btn-gps" class="btn-action" style="width: 100%; margin-bottom: 10px;">📍 Ma position & Météo</button>
-
-        <div id="bloc-infos" style="display: none;">
-            <div style="display: flex; justify-content: center; align-items: center; gap: 10px;">
-                <img id="icone" src="" alt="" style="width: 60px;">
-                <div class="temp"><span id="temperature">--</span>°</div>
+    <!-- Encart météo (Caché par défaut) -->
+    <div class="meteo-carte" id="meteo-widget" style="display: none;">
+        <div style="display: flex; justify-content: center; align-items: center; gap: 10px;">
+            <img id="icone" src="" alt="" style="width: 60px;">
+            <div class="temp"><span id="temperature">--</span>°</div>
+        </div>
+        <div class="ressenti">Ressenti : <span id="temp-ressentie">--</span>° à <span id="ville">--</span></div>
+        <div class="desc" id="description">--</div>
+        
+        <div class="vent-box" id="bloc-vent">
+            <div style="text-align: left;">
+                <div>💨 <span id="vitesse-vent">--</span> km/h</div>
+                <div id="bloc-rafales" class="rafales" style="display:none;">⚠️ Rafales : <span id="rafales-vent">--</span> km/h</div>
             </div>
-            <div class="ressenti">Ressenti : <span id="temp-ressentie">--</span>°</div>
-            <div class="desc" id="description">--</div>
-            
-            <div class="vent-box" id="bloc-vent">
-                <div style="text-align: left;">
-                    <div>💨 <span id="vitesse-vent">--</span> km/h</div>
-                    <div id="bloc-rafales" class="rafales" style="display:none;">⚠️ Rafales : <span id="rafales-vent">--</span> km/h</div>
-                </div>
-                <div><span class="fleche-vent" id="fleche">⬇</span> <span id="direction-vent">--</span></div>
-            </div>
+            <div><span class="fleche-vent" id="fleche">⬇</span> <span id="direction-vent">--</span></div>
         </div>
         <div id="message-erreur" class="erreur"></div>
     </div>
@@ -133,8 +134,6 @@
         let indexPositionCycliste = null; 
         
         let pointsVingtKmGlobale = [];
-        
-        // NOUVEAU : Mémoire de notre avancée sur le parcours
         let distanceCyclisteActuelle = 0; 
 
         function calculerDistance(lat1, lon1, lat2, lon2) {
@@ -168,7 +167,7 @@
                 pointsVingtKmGlobale = []; 
                 donneesGPX = [];
                 indexPositionCycliste = null;
-                distanceCyclisteActuelle = 0; // Remise à zéro au chargement
+                distanceCyclisteActuelle = 0; 
 
                 for (let i = 0; i < trackPoints.length; i++) {
                     const lat = parseFloat(trackPoints[i].getAttribute("lat"));
@@ -214,7 +213,7 @@
                     document.getElementById('stat-dist').innerText = distanceTotale.toFixed(1);
                     document.getElementById('stat-denivele').innerText = Math.round(denivelePositif);
                     document.getElementById('gpx-panel').style.display = 'block';
-                    document.getElementById('meteo-widget').style.bottom = '270px'; 
+                    
                     setTimeout(() => map.invalidateSize(), 300); 
 
                     genererGraphique(labelsDistance, dataAltitude);
@@ -238,9 +237,6 @@
             const tempsActuelUnx = Math.floor(Date.now() / 1000); 
 
             points.forEach(pt => {
-                
-                // NOUVEAU : Si on a déjà dépassé ce point, on affiche un "Passé" au lieu de calculer
-                // (marge de 0.5km pour ne pas effacer un point si on est juste dessus)
                 if (pt.km < distanceCyclisteActuelle - 0.5) {
                     const htmlPasse = `
                         <div style="background: #bdc3c7; border-radius: 50%; width: 24px; height: 24px; display: flex; justify-content: center; align-items: center; border: 2px solid #95a5a6; margin: 0 auto; opacity: 0.8;">
@@ -254,14 +250,11 @@
                     const marqueur = L.marker([pt.lat, pt.lon], {icon: iconPasse}).addTo(map);
                     marqueur.bindPopup("Point kilométrique dépassé.");
                     marqueursVentParcours.push(marqueur);
-                    return; // On arrête là pour ce point, on ne charge pas la météo
+                    return; 
                 }
 
-                // NOUVEAU : On calcule la distance qu'il RESTE à parcourir jusqu'à ce point
                 const distanceRestante = pt.km - distanceCyclisteActuelle;
                 const tempsParcoursSecondes = (distanceRestante / vitesseMoyenne) * 3600;
-                
-                // L'heure estimée est donc : Heure ACTUELLE + Temps pour faire la distance restante
                 const heureArriveeEstimee = tempsActuelUnx + tempsParcoursSecondes;
 
                 const url = `https://api.openweathermap.org/data/2.5/forecast?lat=${pt.lat}&lon=${pt.lon}&appid=${cleAPI}&units=metric&lang=fr`;
@@ -356,7 +349,6 @@
             });
         }
 
-        // NOUVEAU : Cette fonction retourne un booléen (vrai si on est sur la trace)
         function placerCyclisteSurGraphique(lat, lon) {
             if (donneesGPX.length === 0 || !graphiqueAltitude) return false;
             
@@ -371,12 +363,12 @@
                 }
             });
             
-            if (distanceMin <= 3.0) { // Si on est à moins de 3km de la trace
+            if (distanceMin <= 3.0) { 
                 indexPositionCycliste = meilleurIndex;
-                distanceCyclisteActuelle = donneesGPX[meilleurIndex].distance; // On sauvegarde où on est
+                distanceCyclisteActuelle = donneesGPX[meilleurIndex].distance; 
             } else {
                 indexPositionCycliste = null; 
-                distanceCyclisteActuelle = 0; // Hors trace
+                distanceCyclisteActuelle = 0; 
             }
             
             graphiqueAltitude.update(); 
@@ -410,18 +402,18 @@
                     document.getElementById('bloc-rafales').style.display = 'none';
                 }
                 
-                document.getElementById('bloc-infos').style.display = 'block';
-                document.getElementById('bloc-vent').style.display = 'flex';
-                
-                document.getElementById('btn-gps').innerText = "🔄 Actualiser ma position";
+                // NOUVEAU : On affiche le panneau météo !
+                document.getElementById('meteo-widget').style.display = 'block';
+                document.getElementById('btn-gps').innerText = "🔄 Actualiser";
             }).catch(e => {
-                document.getElementById('message-erreur').innerText = "Erreur de connexion API.";
+                document.getElementById('message-erreur').innerText = "Erreur météo.";
+                document.getElementById('meteo-widget').style.display = 'block';
                 document.getElementById('btn-gps').innerText = "📍 Réessayer";
             });
         }
 
         document.getElementById('btn-gps').addEventListener('click', function() {
-            this.innerText = "⏳ Recherche...";
+            this.innerText = "⏳...";
             document.getElementById('message-erreur').innerText = ""; 
 
             if (navigator.geolocation) {
@@ -435,10 +427,8 @@
                         if (marqueurGPS) marqueurGPS.setLatLng([lat, lon]);
                         else marqueurGPS = L.marker([lat, lon]).addTo(map);
                         
-                        // 1. On place le point rouge ET on récupère notre distance
                         const estSurParcours = placerCyclisteSurGraphique(lat, lon);
                         
-                        // 2. Si on est sur le parcours, on met à jour les heures des bulles en fonction de notre avancée !
                         if (estSurParcours && pointsVingtKmGlobale.length > 0) {
                             ajouterVentSurParcours(pointsVingtKmGlobale);
                         }
@@ -446,12 +436,14 @@
                         recupererMeteo(lat, lon);
                     },
                     (erreur) => {
-                        this.innerText = "📍 Ma position & Météo";
+                        this.innerText = "📍 Ma Position";
                         document.getElementById('message-erreur').innerText = "GPS refusé.";
+                        document.getElementById('meteo-widget').style.display = 'block';
                     }
                 );
             } else {
                 document.getElementById('message-erreur').innerText = "GPS non supporté.";
+                document.getElementById('meteo-widget').style.display = 'block';
             }
         });
     </script>
