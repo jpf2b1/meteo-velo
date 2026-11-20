@@ -31,13 +31,18 @@
 
         .stats-gpx {
             display: flex; justify-content: space-around; align-items: center; flex-wrap: wrap; font-weight: bold;
-            color: #2c3e50; margin-bottom: 5px; font-size: 14px; gap: 5px;
+            color: #2c3e50; margin-bottom: 8px; font-size: 14px; gap: 5px;
         }
 
-        .input-vitesse {
-            width: 50px; text-align: center; border: 1px solid #bdc3c7; 
+        .planification-box {
+            width: 100%; text-align: center; margin-bottom: 5px; font-size: 13px; font-weight: bold; color: #2c3e50;
+        }
+
+        .input-vitesse, .input-date {
+            text-align: center; border: 1px solid #bdc3c7; 
             border-radius: 4px; padding: 2px; font-weight: bold; color: #2980b9;
         }
+        .input-vitesse { width: 50px; }
 
         .chart-container { position: relative; height: 165px; width: 100%; margin-top: 5px;}
 
@@ -132,6 +137,10 @@
     <div id="map"></div>
 
     <div id="gpx-panel">
+        <!-- NOUVEAU : Option de planification de la date de départ -->
+        <div class="planification-box">
+            🗓️ Départ : <input type="datetime-local" id="date-depart" class="input-date">
+        </div>
         <div class="stats-gpx">
             <div>📏 <span id="stat-dist">0</span> km</div>
             <div>⛰️ <span id="stat-denivele">0</span> m</div>
@@ -167,6 +176,16 @@
         
         let pointsVingtKmGlobale = [];
         let distanceCyclisteActuelle = 0; 
+
+        // Initialiser la date de départ à "maintenant"
+        function initDateDepart() {
+            const dateInput = document.getElementById('date-depart');
+            const now = new Date();
+            // Ajustement du fuseau horaire pour l'input datetime-local
+            now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+            dateInput.value = now.toISOString().slice(0,16);
+        }
+        initDateDepart();
 
         function calculerDistance(lat1, lon1, lat2, lon2) {
             const R = 6371; 
@@ -257,10 +276,13 @@
             reader.readAsText(file);
         });
 
+        // Recalculer si la vitesse OU la date change
         document.getElementById('vitesse-moyenne').addEventListener('change', function() {
-            if (pointsVingtKmGlobale.length > 0) {
-                ajouterVentSurParcours(pointsVingtKmGlobale);
-            }
+            if (pointsVingtKmGlobale.length > 0) ajouterVentSurParcours(pointsVingtKmGlobale);
+        });
+        
+        document.getElementById('date-depart').addEventListener('change', function() {
+            if (pointsVingtKmGlobale.length > 0) ajouterVentSurParcours(pointsVingtKmGlobale);
         });
 
         document.getElementById('btn-reset-zoom').addEventListener('click', function() {
@@ -270,7 +292,6 @@
             }
         });
 
-        // Fonction pour afficher/masquer la légende et redimensionner la carte
         document.getElementById('btn-toggle-legende').addEventListener('click', function() {
             const legende = document.getElementById('legende-couleurs');
             if (legende.style.display === 'none') {
@@ -283,7 +304,6 @@
             setTimeout(() => { if(map) map.invalidateSize(); }, 100);
         });
 
-        // Fonction pour fermer la fenêtre météo
         document.getElementById('fermer-meteo').addEventListener('click', function() {
             document.getElementById('meteo-widget').style.display = 'none';
             document.getElementById('btn-gps').innerText = "📍 Ma Position";
@@ -294,7 +314,10 @@
             marqueursVentParcours = [];
 
             const vitesseMoyenne = parseFloat(document.getElementById('vitesse-moyenne').value) || 25;
-            const tempsActuelUnx = Math.floor(Date.now() / 1000); 
+            
+            // NOUVEAU : Récupère la date choisie par l'utilisateur au lieu de l'heure actuelle
+            const dateInput = document.getElementById('date-depart').value;
+            const tempsDepartUnx = Math.floor(new Date(dateInput).getTime() / 1000);
 
             points.forEach(pt => {
                 if (pt.km < distanceCyclisteActuelle - 0.5) {
@@ -314,7 +337,7 @@
 
                 const distanceRestante = pt.km - distanceCyclisteActuelle;
                 const tempsParcoursSecondes = (distanceRestante / vitesseMoyenne) * 3600;
-                const heureArriveeEstimee = tempsActuelUnx + tempsParcoursSecondes;
+                const heureArriveeEstimee = tempsDepartUnx + tempsParcoursSecondes;
 
                 const url = `https://api.openweathermap.org/data/2.5/forecast?lat=${pt.lat}&lon=${pt.lon}&appid=${cleAPI}&units=metric&lang=fr`;
                 
@@ -330,8 +353,17 @@
                         }
                     }
 
+                    // Affiche le jour en plus de l'heure si la sortie est planifiée un autre jour
                     const dateArrivee = new Date(heureArriveeEstimee * 1000);
-                    const heureTexte = dateArrivee.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+                    const optionsDate = { hour: '2-digit', minute: '2-digit' };
+                    const maintenant = new Date();
+                    
+                    let prefixeJour = "";
+                    if (dateArrivee.getDate() !== maintenant.getDate()) {
+                        const jours = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
+                        prefixeJour = jours[dateArrivee.getDay()] + " ";
+                    }
+                    const heureTexte = prefixeJour + dateArrivee.toLocaleTimeString('fr-FR', optionsDate);
                     
                     const vitesseKmh = Math.round(previsionLaPlusProche.wind.speed * 3.6);
                     const tempPrevue = Math.round(previsionLaPlusProche.main.temp);
