@@ -1,4 +1,3 @@
-HTML
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -25,8 +24,7 @@ HTML
         #map { flex: 1; width: 100%; z-index: 1; }
 
         #gpx-panel {
-            /* Légèrement agrandi pour faire de la place à la légende */
-            display: none; height: 280px; background: white;
+            display: none; height: auto; background: white;
             border-top: 2px solid #2980b9; box-shadow: 0 -4px 10px rgba(0,0,0,0.1);
             padding: 10px; box-sizing: border-box; z-index: 1000;
         }
@@ -43,7 +41,6 @@ HTML
 
         .chart-container { position: relative; height: 165px; width: 100%; margin-top: 5px;}
 
-        /* NOUVEAU : Style de la légende des pentes */
         .legende-pente {
             text-align: center; font-size: 11px; margin-top: 8px; font-weight: bold; color: #7f8c8d;
         }
@@ -68,12 +65,23 @@ HTML
         }
         .btn-reset:active { background: #2980b9; color: white; }
 
+        .btn-toggle {
+            display: inline-block; padding: 4px 8px; font-size: 12px; border: 1px solid #27ae60; 
+            border-radius: 4px; background: white; color: #27ae60; cursor: pointer; font-weight: bold;
+        }
+        .btn-toggle:active { background: #27ae60; color: white; }
+
         .meteo-carte {
             position: absolute; top: 75px; left: 50%; transform: translateX(-50%); z-index: 1000;
             background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(10px);
             border-radius: 15px; border: 1px solid rgba(255, 255, 255, 0.5);
             padding: 15px; text-align: center; width: 85%; max-width: 320px;
             box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3); color: #333;
+        }
+
+        .btn-fermer-meteo {
+            position: absolute; top: 8px; right: 10px; font-size: 14px; cursor: pointer; color: #7f8c8d;
+            background: none; border: none; padding: 5px;
         }
 
         .temp { font-size: 42px; font-weight: bold; color: #2980b9; margin: 0; }
@@ -103,6 +111,7 @@ HTML
     </div>
 
     <div class="meteo-carte" id="meteo-widget" style="display: none;">
+        <button class="btn-fermer-meteo" id="fermer-meteo">❌</button>
         <div style="display: flex; justify-content: center; align-items: center; gap: 10px;">
             <img id="icone" src="" alt="" style="width: 60px;">
             <div class="temp"><span id="temperature">--</span>°</div>
@@ -127,13 +136,13 @@ HTML
             <div>📏 <span id="stat-dist">0</span> km</div>
             <div>⛰️ <span id="stat-denivele">0</span> m</div>
             <div>⏱️ Moy: <input type="number" id="vitesse-moyenne" class="input-vitesse" value="25" min="10" max="50"> km/h</div>
+            <button id="btn-toggle-legende" class="btn-toggle">Légende 🔽</button>
             <button id="btn-reset-zoom" class="btn-reset">🔍 Rétablir</button>
         </div>
         <div class="chart-container">
             <canvas id="elevationChart"></canvas>
         </div>
-        <!-- Légende des couleurs -->
-        <div class="legende-pente">
+        <div class="legende-pente" id="legende-couleurs">
             <span style="color:#3498db">■</span> Descente 
             <span style="color:#27ae60; margin-left: 8px;">■</span> < 3% 
             <span style="color:#f39c12; margin-left: 8px;">■</span> 3-7% 
@@ -182,7 +191,7 @@ HTML
                 let latlngs = [];
                 let labelsDistance = [];
                 let dataAltitude = [];
-                let rawDistances = []; // NOUVEAU : Pour calculer les pourcentages avec précision
+                let rawDistances = [];
                 let distanceTotale = 0;
                 let denivelePositif = 0;
                 let derniereLat = null, derniereLon = null, derniereEle = null;
@@ -241,7 +250,6 @@ HTML
                     
                     setTimeout(() => map.invalidateSize(), 300); 
 
-                    // On envoie désormais rawDistances à la fonction graphique
                     genererGraphique(labelsDistance, dataAltitude, rawDistances);
                     ajouterVentSurParcours(pointsVingtKmGlobale);
                 }
@@ -260,6 +268,25 @@ HTML
                 graphiqueAltitude.resetZoom();
                 this.style.display = 'none';
             }
+        });
+
+        // Fonction pour afficher/masquer la légende et redimensionner la carte
+        document.getElementById('btn-toggle-legende').addEventListener('click', function() {
+            const legende = document.getElementById('legende-couleurs');
+            if (legende.style.display === 'none') {
+                legende.style.display = 'block';
+                this.innerText = "Légende 🔽";
+            } else {
+                legende.style.display = 'none';
+                this.innerText = "Légende 🔼";
+            }
+            setTimeout(() => { if(map) map.invalidateSize(); }, 100);
+        });
+
+        // Fonction pour fermer la fenêtre météo
+        document.getElementById('fermer-meteo').addEventListener('click', function() {
+            document.getElementById('meteo-widget').style.display = 'none';
+            document.getElementById('btn-gps').innerText = "📍 Ma Position";
         });
 
         function ajouterVentSurParcours(points) {
@@ -281,7 +308,6 @@ HTML
                     `;
                     const iconPasse = L.divIcon({ html: htmlPasse, className: 'custom-vent-icon', iconSize: [24, 40], iconAnchor: [12, 20] });
                     const marqueur = L.marker([pt.lat, pt.lon], {icon: iconPasse}).addTo(map);
-                    marqueur.bindPopup("Point kilométrique dépassé.");
                     marqueursVentParcours.push(marqueur);
                     return; 
                 }
@@ -313,7 +339,6 @@ HTML
 
                     const bordure = pt.estArrivee ? '#27ae60' : '#2980b9'; 
                     const drapeau = pt.estArrivee ? '🏁 ' : '';
-                    const titrePopup = pt.estArrivee ? `🏁 Arrivée (Km ${pt.km})` : `Km ${pt.km}`;
 
                     const htmlIcone = `
                         <div style="background: rgba(255,255,255,0.9); border-radius: 50%; width: 34px; height: 34px; display: flex; justify-content: center; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.3); border: 2px solid ${bordure}; margin: 0 auto;">
@@ -327,13 +352,6 @@ HTML
                     
                     const ventIcon = L.divIcon({ html: htmlIcone, className: 'custom-vent-icon', iconSize: [34, 60], iconAnchor: [17, 25] });
                     const marqueur = L.marker([pt.lat, pt.lon], {icon: ventIcon}).addTo(map);
-                    
-                    marqueur.bindPopup(`
-                        <div style="text-align:center;">
-                            <b>${titrePopup}</b><br>
-                            <img src="https://openweathermap.org/img/wn/${iconCode}.png" style="width:30px; vertical-align:middle;"> ${tempPrevue}°C
-                        </div>
-                    `);
                     marqueursVentParcours.push(marqueur); 
                 });
             });
@@ -362,7 +380,6 @@ HTML
             }
         };
 
-        // NOUVEAU : La fonction graphique calcule la couleur du trait selon le % de pente
         function genererGraphique(labels, data, rawDistances) {
             const ctx = document.getElementById('elevationChart').getContext('2d');
             if (graphiqueAltitude) graphiqueAltitude.destroy(); 
@@ -374,27 +391,23 @@ HTML
                     datasets: [{
                         label: 'Altitude', 
                         data: data, 
-                        borderWidth: 3, // Trait un peu plus épais pour bien voir la couleur
-                        backgroundColor: 'rgba(189, 195, 199, 0.2)', // Remplissage gris clair neutre
+                        borderWidth: 3, 
+                        backgroundColor: 'rgba(189, 195, 199, 0.2)', 
                         fill: true, pointRadius: 0, tension: 0.1,
                         segment: {
                             borderColor: contexte => {
-                                if (!rawDistances) return '#27ae60'; // Par défaut
+                                if (!rawDistances) return '#27ae60'; 
                                 const index = contexte.p0DataIndex;
-                                // Calcul de la distance du segment en mètres
                                 const distanceMetres = (rawDistances[index + 1] - rawDistances[index]) * 1000;
                                 if (distanceMetres <= 0.1) return '#27ae60';
                                 
-                                // Calcul du dénivelé du segment
                                 const deniveleMetres = data[index + 1] - data[index];
-                                
-                                // Calcul du pourcentage de la pente
                                 const pente = (deniveleMetres / distanceMetres) * 100;
 
-                                if (pente < -1) return '#3498db'; // Descente = Bleu
-                                if (pente < 3) return '#27ae60';  // Jusqu'à 3% = Vert
-                                if (pente < 7) return '#f39c12';  // De 3 à 7% = Orange
-                                return '#e74c3c';                 // Au-delà de 7% = Rouge
+                                if (pente < -1) return '#3498db'; 
+                                if (pente < 3) return '#27ae60';  
+                                if (pente < 7) return '#f39c12';  
+                                return '#e74c3c';                 
                             }
                         }
                     }]
