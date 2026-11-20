@@ -1,20 +1,20 @@
-const CACHE_NAME = 'meteo-velo-v2';
+const CACHE_NAME = 'meteo-velo-v3';
 const urlsToCache = [
-    './',
-    './index.html',
-    './manifest.json',
-    './icon-192.jpg'
+    '/meteo-velo/',
+    '/meteo-velo/index.html',
+    '/meteo-velo/manifest.json',
+    '/meteo-velo/icon-192.png',
+    '/meteo-velo/icon-512.png'
 ];
 
 self.addEventListener('install', event => {
-    self.skipWaiting(); // Force la mise à jour immédiate
+    self.skipWaiting();
     event.waitUntil(
         caches.open(CACHE_NAME).then(cache => cache.addAll(urlsToCache))
     );
 });
 
 self.addEventListener('activate', event => {
-    // Nettoie l'ancienne mémoire quand il y a une mise à jour
     event.waitUntil(
         caches.keys().then(cacheNames => {
             return Promise.all(
@@ -26,15 +26,10 @@ self.addEventListener('activate', event => {
     );
 });
 
-// Stratégie : Réseau d'abord, mémoire (cache) en secours
 self.addEventListener('fetch', event => {
     event.respondWith(
-        fetch(event.request)
-            .then(response => {
-                const responseClone = response.clone();
-                caches.open(CACHE_NAME).then(cache => cache.put(event.request, responseClone));
-                return response;
-            })
-            .catch(() => caches.match(event.request))
+        caches.match(event.request).then(response => {
+            return response || fetch(event.request);
+        })
     );
 });
