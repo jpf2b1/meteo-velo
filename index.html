@@ -315,7 +315,6 @@
 
             const vitesseMoyenne = parseFloat(document.getElementById('vitesse-moyenne').value) || 25;
             
-            // NOUVEAU : Récupère la date choisie par l'utilisateur au lieu de l'heure actuelle
             const dateInput = document.getElementById('date-depart').value;
             const tempsDepartUnx = Math.floor(new Date(dateInput).getTime() / 1000);
 
@@ -352,6 +351,60 @@
                             previsionLaPlusProche = data.list[i];
                         }
                     }
+
+                    const dateArrivee = new Date(heureArriveeEstimee * 1000);
+                    const optionsDate = { hour: '2-digit', minute: '2-digit' };
+                    const maintenant = new Date();
+                    
+                    let prefixeJour = "";
+                    if (dateArrivee.getDate() !== maintenant.getDate()) {
+                        const jours = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
+                        prefixeJour = jours[dateArrivee.getDay()] + " ";
+                    }
+                    const heureTexte = prefixeJour + dateArrivee.toLocaleTimeString('fr-FR', optionsDate);
+                    
+                    const vitesseKmh = Math.round(previsionLaPlusProche.wind.speed * 3.6);
+                    
+                    // Récupération des données de température
+                    const tempPrevue = Math.round(previsionLaPlusProche.main.temp);
+                    const ressenti = Math.round(previsionLaPlusProche.main.feels_like);
+                    const description = previsionLaPlusProche.weather[0].description;
+
+                    const bordure = pt.estArrivee ? '#27ae60' : '#2980b9'; 
+                    const drapeau = pt.estArrivee ? '🏁 ' : '';
+
+                    const htmlIcone = `
+                        <div style="background: rgba(255,255,255,0.9); border-radius: 50%; width: 34px; height: 34px; display: flex; justify-content: center; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.3); border: 2px solid ${bordure}; margin: 0 auto;">
+                            <div style="transform: rotate(${previsionLaPlusProche.wind.deg}deg); font-size: 20px;">⬇</div>
+                        </div>
+                        <div style="background: white; border-radius: 4px; font-size: 11px; font-weight: bold; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.3); margin-top: 2px; width: 62px; margin-left: -14px; padding: 2px 0; border: 1px solid ${bordure};">
+                            ${drapeau}${vitesseKmh} km/h<br>
+                            <span style="color: #e74c3c; font-size: 10px;">🕒 ${heureTexte}</span>
+                        </div>
+                    `;
+                    
+                    const ventIcon = L.divIcon({ html: htmlIcone, className: 'custom-vent-icon', iconSize: [34, 60], iconAnchor: [17, 25] });
+                    const marqueur = L.marker([pt.lat, pt.lon], {icon: ventIcon}).addTo(map);
+                    
+                    // --- NOUVEAUTÉ : Création de la bulle d'info cliquable ---
+                    const contenuPopup = `
+                        <div style="text-align: center; font-family: sans-serif; font-size: 13px; line-height: 1.4;">
+                            <div style="font-weight: bold; color: #2980b9; font-size: 16px; margin-bottom: 2px;">
+                                🌡️ ${tempPrevue}°C
+                            </div>
+                            <div style="color: #2c3e50;">Ressenti : <b>${ressenti}°C</b></div>
+                            <div style="text-transform: capitalize; color: #7f8c8d; margin-top: 5px;">
+                                ${description}
+                            </div>
+                        </div>
+                    `;
+                    marqueur.bindPopup(contenuPopup);
+                    // ---------------------------------------------------------
+
+                    marqueursVentParcours.push(marqueur); 
+                });
+            });
+        }
 
                     // Affiche le jour en plus de l'heure si la sortie est planifiée un autre jour
                     const dateArrivee = new Date(heureArriveeEstimee * 1000);
