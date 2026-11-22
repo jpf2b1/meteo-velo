@@ -333,7 +333,6 @@
             if (recentrerCarte) map.panTo([donneesGPX[index].lat, donneesGPX[index].lon]);
         }
 
-        // Recherche haute précision IGN : combine recherche ciblée par mots-clés (rayon 1.8km) + reverse POI
         async function rechercherColIGN(lat, lon) {
             const regexColExplicite = /^(col|pas|port|collet|baisse|hourquette|brèche|breche)\b/i;
             const regexRelief = /\b(col|côte|cote|mont|pas|port|cime|sommet|signal|pic|puy|ballon|crêt|cret|collet|pla|alpe|station|rocher|tête|tete|montagne|suc)\b/i;
@@ -341,7 +340,6 @@
 
             let candidats = [];
 
-            // 1. Recherche ciblée sur l'index POI de l'IGN avec priorité géographique (attrape Col d'Izoard, Mont Ventoux, Pas de Peyrol...)
             const requetes = ['col', 'mont', 'pas', 'puy', 'sommet'];
             const promesses = requetes.map(async (mot) => {
                 try {
@@ -371,7 +369,6 @@
                 } catch (e) {}
             });
 
-            // 2. En parallèle : recherche reverse POI à proximité immédiate (attrape les noms atypiques sans mot-clé)
             const promesseReverse = (async () => {
                 try {
                     const urlRev = `https://data.geopf.fr/geocodage/reverse?lon=${lon}&lat=${lat}&index=poi&limit=20`;
@@ -408,7 +405,6 @@
 
             if (candidats.length === 0) return null;
 
-            // Tri intelligent : priorité absolue aux Cols/Pas/Monts explicites les plus proches
             candidats.sort((a, b) => {
                 if (a.estCol !== b.estCol) return a.estCol ? -1 : 1;
                 if (a.estRelief !== b.estRelief) return a.estRelief ? -1 : 1;
@@ -418,7 +414,8 @@
             return candidats[0].nom;
         }
 
-        async function detecterEtAfficherMontees(dataAltitude, rawDistances, latlngsSource, listeWaypoints, sessionId) {
+        // Détection mathématique pure des ascensions (synchrone, retourne les sommets avec leur km exact)
+        function analyserAscensions(dataAltitude, rawDistances, latlngsSource) {
             let ascensionsDetectees = []; let indexDebut = -1; let altMaxLocale = -Infinity;
             for (let i = 1; i < dataAltitude.length; i++) {
                 let alt = dataAltitude[i];
@@ -437,8 +434,12 @@
                         if (denivelePositif >= 30 && distanceMontee >= 0.5) {
                             let pente = (denivelePositif / (distanceMontee * 1000)) * 100;
                             ascensionsDetectees.push({
-                                kmDebut: rawDistances[indexDebut], distance: distanceMontee,
-                                denivele: denivelePositif, pente: pente,
+                                kmDebut: rawDistances[indexDebut],
+                                kmSommet: rawDistances[vraiIndexSommet],
+                                altitudeSommet: Math.round(vraieAltSommet),
+                                distance: distanceMontee,
+                                denivele: denivelePositif,
+                                pente: pente,
                                 latDebut: latlngsSource[indexDebut][0], lonDebut: latlngsSource[indexDebut][1],
                                 latSommet: latlngsSource[vraiIndexSommet][0], lonSommet: latlngsSource[vraiIndexSommet][1]
                             });
@@ -447,7 +448,10 @@
                     }
                 }
             }
+            return ascensionsDetectees;
+        }
 
+        async function afficherMonteesEtNoms(ascensionsDetectees, distTotale, listeWaypoints, sessionId) {
             const conteneur = document.getElementById('liste-montees'); conteneur.innerHTML = ""; 
             if (ascensionsDetectees.length === 0) {
                 conteneur.innerHTML = "<div style='text-align:center; padding:10px; color:var(--text-secondary); font-style:italic;'>Aucune difficulté majeure détectée.</div>"; return;
@@ -464,9 +468,7 @@
                 setTimeout(() => { if(map) map.invalidateSize(); }, 100);
             });
 
-            const distTotale = rawDistances[rawDistances.length - 1] || 0;
             const seuilDeniveleRecherche = distTotale > 300 ? 80 : 30;
-
             let sommetsAchercher = [];
 
             ascensionsDetectees.forEach((montee, index) => {
@@ -483,11 +485,14 @@
                     });
                 }
 
+                // Synchronise immédiatement le nom s'il vient d'un waypoint GPX
+                montee.nom = nomAscension;
+
                 let isRechercheAPI = false;
                 if (nomAscension.startsWith("Montée") && montee.denivele >= seuilDeniveleRecherche) {
                     nomAscension = `Montée ${index + 1} ⏳`;
                     isRechercheAPI = true;
-                    sommetsAchercher.push({ index: index, lat: montee.latSommet, lon: montee.lonSommet }); 
+                    sommetsAchercher.push({ index: index, montee: montee }); 
                 }
 
                 let classePente = "montee-pente"; 
@@ -525,15 +530,24 @@
                 conteneur.appendChild(div);
             });
 
-            // Interrogation rapide IGN (cadencée à 200ms par sommet)
             for (const s of sommetsAchercher) {
                 if (sessionId !== sessionChargementId) return;
 
                 let bestName = `Montée ${s.index + 1}`;
-                const nomTrouve = await rechercherColIGN(s.lat, s.lon);
+                const nomTrouve = await rechercherColIGN(s.montee.latSommet, s.montee.lonSommet);
                 
                 if (nomTrouve) {
                     bestName = nomTrouve.charAt(0).toUpperCase() + nomTrouve.slice(1);
+                }
+
+                // Met à jour l'objet montée et le pop-up météo associé si présent sur ce sommet
+                s.montee.nom = bestName;
+                const ptMeteoCol = pointsMeteoParcours.find(p => p.estSommet && Math.abs(p.km - s.montee.kmSommet) < 0.2);
+                if (ptMeteoCol) {
+                    ptMeteoCol.nomSommet = bestName;
+                    if (ptMeteoCol.marqueur) {
+                        ptMeteoCol.marqueur.setPopupContent(genererHtmlPopupMeteo(ptMeteoCol));
+                    }
                 }
 
                 let elHtml = document.getElementById(`nom-montee-${s.index}`);
@@ -626,15 +640,49 @@
                     donneesGPX = donneesGPXOptimisees;
                     latlngsGlobaux = latlngsOptimises;
 
-                    let intervalleMeteo = distanceTotale < 30 ? 5 : distanceTotale < 60 ? 10 : distanceTotale < 100 ? 15 : distanceTotale < 200 ? 20 : distanceTotale < 400 ? 30 : 50;
+                    // 1. Détection préalable des ascensions pour récupérer les grands sommets
+                    const ascensionsDetectees = analyserAscensions(dataAltitude, rawDistances, latlngs);
+                    const seuilDeniveleMeteo = distanceTotale < 100 ? 80 : 150;
+                    const grandsSommets = ascensionsDetectees.filter(m => m.denivele >= seuilDeniveleMeteo);
 
+                    // 2. Génération des points météo kilométriques standards
+                    let intervalleMeteo = distanceTotale < 30 ? 5 : distanceTotale < 60 ? 10 : distanceTotale < 100 ? 15 : distanceTotale < 200 ? 20 : distanceTotale < 400 ? 30 : 50;
+                    let pointsStandards = [];
                     let prochainPalierMeteo = intervalleMeteo;
                     for (let i = 0; i < donneesGPX.length; i++) {
                         if (donneesGPX[i].distance >= prochainPalierMeteo) {
-                            pointsMeteoParcours.push({ lat: donneesGPX[i].lat, lon: donneesGPX[i].lon, km: prochainPalierMeteo, estArrivee: false });
+                            pointsStandards.push({ lat: donneesGPX[i].lat, lon: donneesGPX[i].lon, km: prochainPalierMeteo, estArrivee: false, estSommet: false });
                             prochainPalierMeteo += intervalleMeteo;
                         }
                     }
+
+                    if (pointsStandards.length > 0 && (distanceTotale - pointsStandards[pointsStandards.length - 1].km < (intervalleMeteo * 0.2))) {
+                        pointsStandards.pop();
+                    }
+
+                    // 3. Fusion : ajout des grands sommets et suppression des points standards trop proches (< 3 km)
+                    pointsMeteoParcours = pointsStandards.filter(pt => {
+                        const tropProcheSommet = grandsSommets.some(s => Math.abs(s.kmSommet - pt.km) < 3.0);
+                        const tropProcheArrivee = (distanceTotale - pt.km) < 2.0;
+                        return !tropProcheSommet && !tropProcheArrivee;
+                    });
+
+                    grandsSommets.forEach((s, idx) => {
+                        if (distanceTotale - s.kmSommet >= 1.5) {
+                            pointsMeteoParcours.push({
+                                lat: s.latSommet,
+                                lon: s.lonSommet,
+                                km: parseFloat(s.kmSommet.toFixed(1)),
+                                estArrivee: false,
+                                estSommet: true,
+                                nomSommet: s.nom || `Sommet (${s.altitudeSommet} m)`
+                            });
+                        }
+                    });
+
+                    // Ajout systématique du point d'arrivée
+                    pointsMeteoParcours.push({ lat: derniereLat, lon: derniereLon, km: parseFloat(distanceTotale.toFixed(1)), estArrivee: true, estSommet: false });
+                    pointsMeteoParcours.sort((a, b) => a.km - b.km);
 
                     if (traceGPXLayer) map.removeLayer(traceGPXLayer);
                     
@@ -661,9 +709,6 @@
                         }
                     }
 
-                    if (pointsMeteoParcours.length > 0 && (distanceTotale - pointsMeteoParcours[pointsMeteoParcours.length - 1].km < (intervalleMeteo * 0.2))) { pointsMeteoParcours.pop(); }
-                    pointsMeteoParcours.push({ lat: derniereLat, lon: derniereLon, km: distanceTotale.toFixed(1), estArrivee: true });
-
                     document.getElementById('panel-content').style.display = 'block';
                     document.getElementById('panel-header').innerHTML = '🔽 Masquer le profil';
                     
@@ -674,7 +719,7 @@
 
                     genererGraphique(labelsOptimises, altitudeOptimisee, distancesOptimisees);
                     ajouterVentSurParcours(pointsMeteoParcours);
-                    detecterEtAfficherMontees(dataAltitude, rawDistances, latlngs, listeWaypoints, currentSession);
+                    afficherMonteesEtNoms(ascensionsDetectees, distanceTotale, listeWaypoints, currentSession);
                 }
             };
             reader.readAsText(file);
@@ -718,6 +763,15 @@
         document.getElementById('vitesse-moyenne').addEventListener('change', () => { if (pointsMeteoParcours.length > 0) ajouterVentSurParcours(pointsMeteoParcours); });
         document.getElementById('date-depart').addEventListener('change', () => { if (pointsMeteoParcours.length > 0) ajouterVentSurParcours(pointsMeteoParcours); });
 
+        function genererHtmlPopupMeteo(pt) {
+            if (!pt.meteoCache) return "";
+            const { temp, ress, probaPluie, desc } = pt.meteoCache;
+            const titreSommet = pt.estSommet ? `<div style="font-weight: bold; color: #e74c3c; font-size: 13px; margin-bottom: 3px;">⛰️ ${pt.nomSommet}</div>` : '';
+            const titreArrivee = pt.estArrivee ? `<div style="font-weight: bold; color: #27ae60; font-size: 13px; margin-bottom: 3px;">🏁 Arrivée (Km ${pt.km})</div>` : '';
+            const detailPluie = probaPluie > 0 ? `<div style="color: #3498db; margin-top: 4px;"><b>💧 Pluie : ${probaPluie}% de risque</b></div>` : '';
+            return `<div style="text-align: center; font-family: sans-serif; font-size: 13px; line-height: 1.4;">${titreSommet}${titreArrivee}<div style="font-weight: bold; color: var(--border-panel); font-size: 16px; margin-bottom: 2px;">🌡️ ${temp}°C</div><div style="color: var(--text-primary);">Ressenti : <b>${ress}°C</b></div>${detailPluie}<div style="text-transform: capitalize; color: var(--text-secondary); margin-top: 5px;">${desc}</div></div>`;
+        }
+
         function ajouterVentSurParcours(points) {
             marqueursVentParcours.forEach(m => map.removeLayer(m)); marqueursVentParcours = [];
             const vitMoy = parseFloat(document.getElementById('vitesse-moyenne').value) || 25;
@@ -746,7 +800,7 @@
                     const hTexte = prefix + dateArr.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
                     
                     const vitKmh = Math.round(prev.wind.speed * 3.6), temp = Math.round(prev.main.temp), ress = Math.round(prev.main.feels_like);
-                    const drap = pt.estArrivee ? '🏁 ' : '';
+                    const iconePrefixe = pt.estArrivee ? '🏁 ' : pt.estSommet ? '⛰️ ' : '';
 
                     const isDark = document.body.getAttribute('data-theme') === 'dark';
                     let couleurVent = isDark ? '#10ac84' : '#27ae60'; 
@@ -754,23 +808,25 @@
                     if (vitKmh >= 30) { couleurVent = isDark ? '#ff4757' : '#e74c3c'; } 
                     else if (vitKmh >= 15) { couleurVent = isDark ? '#ffa502' : '#f39c12'; }
 
-                    const couleurBordureMeteo = pt.estArrivee ? '#27ae60' : isDark ? '#10ac84' : '#2980b9';
+                    const couleurBordureMeteo = pt.estArrivee ? '#27ae60' : pt.estSommet ? '#e74c3c' : isDark ? '#10ac84' : '#2980b9';
                     let probaPluie = prev.pop ? Math.round(prev.pop * 100) : 0;
                     let textePluie = probaPluie > 10 ? `<span style="color: #3498db; font-weight: bold;">💧 ${probaPluie}%</span><br>` : '';
-                    const isDarkStyling = isDark ? 'background: #1e1e1e; color: #f5f6fa; border: 1px solid #10ac84;' : 'background: white; color: #2c3e50; border: 1px solid ' + couleurBordureMeteo;
+                    const isDarkStyling = isDark ? 'background: #1e1e1e; color: #f5f6fa; border: 1.5px solid ' + couleurBordureMeteo + ';' : 'background: white; color: #2c3e50; border: 1.5px solid ' + couleurBordureMeteo + ';';
+
+                    pt.meteoCache = { temp, ress, probaPluie, desc: prev.weather[0].description };
 
                     const html = `
                     <div style="background: ${isDark ? 'rgba(30,30,30,0.95)' : 'rgba(255,255,255,0.95)'}; border-radius: 50%; width: 36px; height: 36px; display: flex; justify-content: center; align-items: center; box-shadow: 0 2px 5px var(--shadow); border: 3px solid ${couleurVent}; margin: 0 auto; pointer-events: none;">
                         <div style="transform: rotate(${prev.wind.deg}deg); font-size: 22px; font-weight: bold; color: ${couleurVent};">⬇</div>
                     </div>
-                    <div style="${isDarkStyling} border-radius: 4px; font-size: 11px; font-weight: bold; text-align: center; box-shadow: 0 1px 3px var(--shadow); margin-top: 4px; width: 68px; margin-left: -16px; padding: 3px 0; pointer-events: none; line-height: 1.3;">
-                        ${drap}${vitKmh} km/h<br>${textePluie}<span style="color: var(--text-secondary); font-size: 9px;">🕒 ${hTexte}</span>
+                    <div style="${isDarkStyling} border-radius: 4px; font-size: 11px; font-weight: bold; text-align: center; box-shadow: 0 1px 3px var(--shadow); margin-top: 4px; width: 72px; margin-left: -18px; padding: 3px 0; pointer-events: none; line-height: 1.3;">
+                        ${iconePrefixe}${vitKmh} km/h<br>${textePluie}<span style="color: var(--text-secondary); font-size: 9px;">🕒 ${hTexte}</span>
                     </div>`;
                     
                     const marqueur = L.marker([pt.lat, pt.lon], {icon: L.divIcon({ html: html, className: 'custom-vent-icon', iconSize: [36, 68], iconAnchor: [18, 30] })}).addTo(map);
-                    let detailPluie = probaPluie > 0 ? `<div style="color: #3498db; margin-top: 4px;"><b>💧 Pluie : ${probaPluie}% de risque</b></div>` : '';
-                    marqueur.bindPopup(`<div style="text-align: center; font-family: sans-serif; font-size: 13px; line-height: 1.4;"><div style="font-weight: bold; color: var(--border-panel); font-size: 16px; margin-bottom: 2px;">🌡️ ${temp}°C</div><div style="color: var(--text-primary);">Ressenti : <b>${ress}°C</b></div>${detailPluie}<div style="text-transform: capitalize; color: var(--text-secondary); margin-top: 5px;">${prev.weather[0].description}</div></div>`);
+                    marqueur.bindPopup(genererHtmlPopupMeteo(pt));
                     marqueur.on('click', function(e) { this.openPopup(); });
+                    pt.marqueur = marqueur;
                     marqueursVentParcours.push(marqueur); 
                 });
             });
