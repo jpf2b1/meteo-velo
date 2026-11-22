@@ -381,7 +381,7 @@
                 setTimeout(() => { if(map) map.invalidateSize(); }, 100);
             });
 
-            // Sur les traces > 300 km, on ne cherche le nom que pour les montées >= 120m de D+ pour éviter le blocage IP
+            // Sur les traces > 300 km, on ne cherche le nom que pour les montées >= 120m de D+
             const distTotale = rawDistances[rawDistances.length - 1] || 0;
             const seuilDeniveleRecherche = distTotale > 300 ? 120 : 40;
 
@@ -442,63 +442,56 @@
                 conteneur.appendChild(div);
             });
 
-            // FILE D'ATTENTE CADENCÉE ANTI-BANNISSEMENT (PHOTON + SECOURS NOMINATIM)
+            // RECHERCHE DIRECTE VIA NOMINATIM (OSM) + SECOURS BIGDATACLOUD (Zéro Photon)
             for (const s of sommetsAchercher) {
-                if (sessionId !== sessionChargementId) return; // Arrêt si un nouveau fichier GPX est chargé
+                if (sessionId !== sessionChargementId) return;
 
                 let bestName = `Montée ${s.index + 1}`;
                 let trouve = false;
 
-                // 1. Tentative via Photon (Komoot) avec timeout de 3.5s
+                // 1. Interrogation directe de Nominatim (OpenStreetMap officiel)
                 try {
-                    const ctrl = new AbortController();
-                    const timer = setTimeout(() => ctrl.abort(), 3500);
-                    const urlPhoton = `https://photon.komoot.io/reverse?lat=${s.lat}&lon=${s.lon}&limit=8`;
-                    const resp = await fetch(urlPhoton, { signal: ctrl.signal });
-                    clearTimeout(timer);
+                    const ctrlNom = new AbortController();
+                    const timerNom = setTimeout(() => ctrlNom.abort(), 4500);
+                    const urlNom = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${s.lat}&lon=${s.lon}&zoom=16&accept-language=fr`;
+                    const respNom = await fetch(urlNom, { signal: ctrlNom.signal });
+                    clearTimeout(timerNom);
 
-                    if (resp.ok) {
-                        const data = await resp.json();
-                        if (data.features && data.features.length > 0) {
-                            for (const feat of data.features) {
-                                const props = feat.properties;
-                                const coords = feat.geometry.coordinates;
-                                const dist = calculerDistance(s.lat, s.lon, coords[1], coords[0]);
-                                
-                                if (props && props.name && dist <= 1.2) {
-                                    const nomMin = props.name.toLowerCase();
-                                    const estUnCol = props.osm_value === 'saddle' || 
-                                                     props.osm_value === 'mountain_pass' || 
-                                                     props.osm_value === 'peak' ||
-                                                     /^(col|côte|cote|mont|pas|port|cime|sommet)\b/i.test(nomMin);
-                                    if (estUnCol) {
-                                        bestName = props.name;
-                                        trouve = true;
-                                        break;
-                                    }
+                    if (respNom.ok) {
+                        const dataNom = await respNom.json();
+                        if (dataNom) {
+                            const nomBrut = dataNom.name || (dataNom.address && (dataNom.address.peak || dataNom.address.mountain_pass || dataNom.address.natural));
+                            if (nomBrut) {
+                                const nomMin = nomBrut.toLowerCase();
+                                const estUnCol = dataNom.type === 'saddle' || 
+                                                 dataNom.type === 'mountain_pass' || 
+                                                 dataNom.type === 'peak' || 
+                                                 dataNom.category === 'natural' ||
+                                                 /^(col|côte|cote|mont|pas|port|cime|sommet|signal|pic|puy|ballon|crêt|cret)\b/i.test(nomMin);
+                                if (estUnCol) {
+                                    bestName = nomBrut;
+                                    trouve = true;
                                 }
                             }
                         }
                     }
                 } catch (e) {
-                    // Passage silencieux au serveur de secours Nominatim
+                    // Passage au secours BigDataCloud si Nominatim est occupé
                 }
 
-                // 2. Secours via Nominatim (OpenStreetMap) si Photon a échoué
+                // 2. Secours ultra-rapide via BigDataCloud (CDN mondial, sans timeout)
                 if (!trouve) {
                     try {
-                        const ctrlNom = new AbortController();
-                        const timerNom = setTimeout(() => ctrlNom.abort(), 4000);
-                        const urlNom = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${s.lat}&lon=${s.lon}&zoom=16`;
-                        const respNom = await fetch(urlNom, { signal: ctrlNom.signal });
-                        clearTimeout(timerNom);
-
-                        if (respNom.ok) {
-                            const dataNom = await respNom.json();
-                            if (dataNom && dataNom.name) {
-                                const nomMin = dataNom.name.toLowerCase();
-                                if (dataNom.type === 'saddle' || dataNom.type === 'mountain_pass' || dataNom.type === 'peak' || /^(col|côte|cote|mont|pas|port|cime|sommet)\b/i.test(nomMin)) {
-                                    bestName = dataNom.name;
+                        const urlBDC = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${s.lat}&longitude=${s.lon}&localityLanguage=fr`;
+                        const respBDC = await fetch(urlBDC);
+                        if (respBDC.ok) {
+                            const dataBDC = await respBDC.json();
+                            if (dataBDC && dataBDC.localityInfo && dataBDC.localityInfo.informative) {
+                                for (const info of dataBDC.localityInfo.informative) {
+                                    if (info.name && /^(col|côte|cote|mont|pas|port|cime|sommet)\b/i.test(info.name)) {
+                                        bestName = info.name;
+                                        break;
+                                    }
                                 }
                             }
                         }
@@ -514,8 +507,8 @@
                     elHtml.style.color = "var(--text-primary)";
                 }
 
-                // Pause de 350 ms entre chaque requête pour éviter tout blocage serveur
-                await attendre(350);
+                // Respect de la limite Nominatim (1 requête / seconde max)
+                await attendre(1100);
             }
         }
 
