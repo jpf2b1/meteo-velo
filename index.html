@@ -178,9 +178,9 @@
         let traceGPXLayer = null, graphiqueAltitude = null;
         let marqueursVentParcours = [], donneesGPX = [], pointsMeteoParcours = [], latlngsGlobaux = [];
         let marqueursDistance = []; 
-        let indexPositionCycliste = null; 
+        let indexPositionCycliste = null;
+        let distanceCyclisteActuelle = 0; // Gère l'avancement du cycliste sur le parcours
         
-        // NOUVEAU : Marqueur rouge sur la carte (synchronisé avec le graphique)
         let marqueurPositionPointer = null;
 
         function initDateDepart() {
@@ -197,29 +197,21 @@
             return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
         }
 
-        // === NOUVEAU : CLIC SUR LA CARTE ➡️ AFFICHE SUR LE GRAPHIQUE ===
         map.on('click', function(e) {
-            if (donneesGPX.length === 0) return; // Si pas de trace chargée, on ne fait rien
-            
+            if (donneesGPX.length === 0) return; 
             let indexPlusProche = 0;
             let distMin = Infinity;
             
-            // Cherche le point du tracé GPX le plus proche du clic
             for (let i = 0; i < donneesGPX.length; i++) {
                 let d = calculerDistance(e.latlng.lat, e.latlng.lng, donneesGPX[i].lat, donneesGPX[i].lon);
-                if (d < distMin) {
-                    distMin = d;
-                    indexPlusProche = i;
-                }
+                if (d < distMin) { distMin = d; indexPlusProche = i; }
             }
-            
-            // Si on clique à plus de 2 km de la trace, on ignore l'action
             if (distMin > 2) return;
             
-            // Met à jour la position
+            // Un simple clic sur la carte simule l'avancement pour visualiser la position
+            // (Ne modifie pas distanceCyclisteActuelle pour ne pas perturber la météo)
             mettreAJourPointeur(indexPlusProche, false);
             
-            // Ouvre automatiquement le panneau du bas s'il était fermé
             const content = document.getElementById('panel-content');
             if (content.style.display === 'none') {
                 content.style.display = 'block';
@@ -228,23 +220,15 @@
             }
         });
 
-        // Fonction centralisée pour mettre à jour le point rouge (Carte + Graphique)
         function mettreAJourPointeur(index, recentrerCarte = true) {
             indexPositionCycliste = index;
-            
-            // 1. Mise à jour du graphique d'altitude
             if (graphiqueAltitude) graphiqueAltitude.update();
-            
-            // 2. Mise à jour de la carte
             if (marqueurPositionPointer) map.removeLayer(marqueurPositionPointer);
             marqueurPositionPointer = L.circleMarker([donneesGPX[index].lat, donneesGPX[index].lon], {
                 radius: 6, fillColor: "#e74c3c", color: "#ffffff", weight: 2, fillOpacity: 1, zIndexOffset: 1000
             }).addTo(map);
 
-            // 3. Option pour recentrer la carte
-            if (recentrerCarte) {
-                map.panTo([donneesGPX[index].lat, donneesGPX[index].lon]);
-            }
+            if (recentrerCarte) map.panTo([donneesGPX[index].lat, donneesGPX[index].lon]);
         }
 
         function detecterEtAfficherMontees(dataAltitude, rawDistances) {
@@ -315,8 +299,9 @@
                 let distanceTotale = 0, denivelePositif = 0, derniereLat = null, derniereLon = null, derniereEle = null;
                 pointsMeteoParcours = []; donneesGPX = [];
                 
-                // Réinitialise le pointeur
+                // === REINITIALISATION LORS D'UN NOUVEAU PARCOURS ===
                 indexPositionCycliste = null;
+                distanceCyclisteActuelle = 0; 
                 if (marqueurPositionPointer) map.removeLayer(marqueurPositionPointer);
 
                 for (let i = 0; i < trackPoints.length; i++) {
@@ -435,6 +420,15 @@
             const tempsDepart = Math.floor(new Date(document.getElementById('date-depart').value).getTime() / 1000);
 
             points.forEach(pt => {
+                // VERIFICATION : Si le point météo est derrière nous, on le grise
+                if (pt.km < distanceCyclisteActuelle - 0.5) {
+                    const htmlPasse = `<div style="background: #bdc3c7; border-radius: 50%; width: 24px; height: 24px; display: flex; justify-content: center; align-items: center; border: 2px solid #95a5a6; margin: 0 auto; opacity: 0.8;"><span style="font-size: 12px;">✅</span></div><div style="background: rgba(255,255,255,0.8); border-radius: 4px; font-size: 9px; font-weight: bold; text-align: center; margin-top: 2px; width: 40px; margin-left: -8px; color: #7f8c8d;">Km ${pt.km}</div>`;
+                    const m = L.marker([pt.lat, pt.lon], {icon: L.divIcon({ html: htmlPasse, className: 'custom-vent-icon', iconSize: [24, 40], iconAnchor: [12, 20] })}).addTo(map);
+                    m.bindPopup(`<div style="text-align:center; font-weight:bold; color:#7f8c8d;">Vous êtes déjà passé par ici !</div>`);
+                    marqueursVentParcours.push(m); 
+                    return; 
+                }
+
                 const hArrivee = tempsDepart + (pt.km / vitMoy) * 3600;
                 fetch(`https://api.openweathermap.org/data/2.5/forecast?lat=${pt.lat}&lon=${pt.lon}&appid=${cleAPI}&units=metric&lang=fr`)
                 .then(r => r.json()).then(data => {
@@ -498,11 +492,8 @@
                 }}}]} ,
                 options: { 
                     responsive: true, maintainAspectRatio: false, 
-                    // NOUVEAU : CLIC SUR LE GRAPHIQUE ➡️ AFFICHE SUR LA CARTE
                     onClick: (event, activeElements) => {
-                        if (activeElements.length > 0) {
-                            mettreAJourPointeur(activeElements[0].index, true);
-                        }
+                        if (activeElements.length > 0) { mettreAJourPointeur(activeElements[0].index, true); }
                     },
                     plugins: { legend: { display: false }, zoom: { pan: { enabled: true, mode: 'x', onPan: () => document.getElementById('btn-reset-zoom').style.display = 'inline-block' }, zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x', onZoom: () => document.getElementById('btn-reset-zoom').style.display = 'inline-block' } } }, 
                     scales: { x: { ticks: { maxTicksLimit: 8 } }, y: { title: { display: true, text: 'Mètres' } } } 
@@ -511,12 +502,35 @@
             });
         }
 
+        // === LE NOUVEAU BOUTON GPS INTELLIGENT ===
         document.getElementById('btn-gps').addEventListener('click', function() {
             this.innerText = "⏳..."; 
             if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition((pos) => {
                     const lat = pos.coords.latitude, lon = pos.coords.longitude;
                     map.setView([lat, lon], 13);
+                    
+                    // NOUVEAUTÉ : Analyse de l'avancement sur le GPX
+                    if (donneesGPX.length > 0) {
+                        let indexPlusProche = 0;
+                        let distMin = Infinity;
+                        
+                        for (let i = 0; i < donneesGPX.length; i++) {
+                            let d = calculerDistance(lat, lon, donneesGPX[i].lat, donneesGPX[i].lon);
+                            if (d < distMin) { distMin = d; indexPlusProche = i; }
+                        }
+                        
+                        // Si le cycliste est à moins de 2 km de son tracé
+                        if (distMin < 2) {
+                            // On enregistre sa vraie distance parcourue
+                            distanceCyclisteActuelle = donneesGPX[indexPlusProche].distance;
+                            // On met à jour le point rouge
+                            mettreAJourPointeur(indexPlusProche, false);
+                            // On actualise la météo (ce qui va griser les points passés)
+                            ajouterVentSurParcours(pointsMeteoParcours);
+                        }
+                    }
+
                     fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${cleAPI}&units=metric&lang=fr`)
                     .then(r => r.json()).then(data => {
                         document.getElementById('ville').innerText = data.name;
