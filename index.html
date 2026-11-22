@@ -377,7 +377,7 @@
                 setTimeout(() => { if(map) map.invalidateSize(); }, 100);
             });
 
-            let sommetsAchercher = []; // Liste d'attente pour la recherche groupée
+            let sommetsAchercher = []; // Liste d'attente pour la recherche groupée OSM
 
             ascensionsDetectees.forEach((montee, index) => {
                 let latSommet = latlngsGlobaux[montee.idxFin][0];
@@ -389,19 +389,19 @@
                 if (listeWaypoints && listeWaypoints.length > 0) {
                     listeWaypoints.forEach(wp => {
                         let d = calculerDistance(latSommet, lonSommet, wp.lat, wp.lon) * 1000;
-                        if (d < 500 && d < distMinWpt) {
+                        if (d < 500 && d < distMinWpt) { // 500m de tolérance
                             distMinWpt = d;
                             nomAscension = wp.name;
                         }
                     });
                 }
 
-                // Préparation de l'interface en attente de la réponse d'OpenStreetMap
+                // Préparation de l'interface en attente OSM
                 let isRechercheOSM = false;
                 if (nomAscension.startsWith("Montée")) {
-                    nomAscension = `Montée ${index + 1} ⏳...`;
+                    nomAscension = `Montée ${index + 1} ⏳`;
                     isRechercheOSM = true;
-                    sommetsAchercher.push({ index: index, lat: latSommet, lon: lonSommet }); // On l'ajoute au tir groupé
+                    sommetsAchercher.push({ index: index, lat: latSommet, lon: lonSommet }); 
                 }
 
                 let classePente = "montee-pente"; 
@@ -436,29 +436,30 @@
                 conteneur.appendChild(div);
             });
 
-            // 2. RECHERCHE GROUPÉE OPENSTREETMAP (1 seule requête pour tout le parcours)
+            // 2. RECHERCHE GROUPÉE OPENSTREETMAP ULTRA-ROBUSTE
             if (sommetsAchercher.length > 0) {
-                // On assemble toutes les coordonnées en une seule super-requête
-                let subQueries = sommetsAchercher.map(s => `node(around:1000,${s.lat},${s.lon})["natural"="saddle"]["name"];node(around:1000,${s.lat},${s.lon})["mountain_pass"="yes"]["name"];node(around:800,${s.lat},${s.lon})["name"~"^(Col|Côte|Cote|Mont|Pas|Port) ",i];`).join("");
+                // Rayon très large (2000m) et requête simplifiée
+                let subQueries = sommetsAchercher.map(s => `node(around:2000,${s.lat},${s.lon})["natural"="saddle"]["name"];node(around:2000,${s.lat},${s.lon})["mountain_pass"="yes"]["name"];node(around:2000,${s.lat},${s.lon})["name"~"^(Col|Côte|Cote|Mont|Pic|Puy|Pas|Port|Sommet) "];`).join("");
                 const queryOSM = `[out:json];(${subQueries});out body;`;
                 
                 fetch(`https://overpass-api.de/api/interpreter`, {
-                    method: 'POST', // Le mode POST permet d'envoyer des requêtes plus longues sans être bloqué
+                    method: 'POST',
                     body: "data=" + encodeURIComponent(queryOSM),
                     headers: { "Content-type": "application/x-www-form-urlencoded" }
                 })
                 .then(r => r.json())
                 .then(data => {
-                    // Pour chaque sommet que l'on cherchait, on regarde s'il y a un résultat à moins d'un kilomètre
                     sommetsAchercher.forEach(s => {
                         let bestName = `Montée ${s.index + 1}`;
-                        let distMinOSM = 1.2; // 1.2 km de tolérance max
+                        let distMinOSM = 2.0; // Tolérance géante de 2 km
 
                         if (data.elements && data.elements.length > 0) {
                             data.elements.forEach(el => {
                                 if (el.lat && el.lon && el.tags && el.tags.name) {
                                     let d = calculerDistance(s.lat, s.lon, el.lat, el.lon);
-                                    if (d < distMinOSM) {
+                                    let nomMin = el.tags.name.toLowerCase();
+                                    
+                                    if (d < distMinOSM && (el.tags.mountain_pass === 'yes' || el.tags.natural === 'saddle' || el.tags.natural === 'peak' || nomMin.includes("col ") || nomMin.includes("côte ") || nomMin.includes("mont ") || nomMin.includes("pic "))) {
                                         distMinOSM = d;
                                         bestName = el.tags.name;
                                     }
@@ -466,17 +467,15 @@
                             });
                         }
 
-                        // Mise à jour visuelle du texte dans la carte
                         let elHtml = document.getElementById(`nom-montee-${s.index}`);
                         if (elHtml) {
                             elHtml.innerText = bestName;
                             elHtml.title = bestName;
-                            elHtml.style.color = "var(--text-primary)"; // On remet la couleur normale (plus grise)
+                            elHtml.style.color = "var(--text-primary)"; 
                         }
                     });
                 }).catch(e => {
-                    console.log("Erreur de connexion à OpenStreetMap:", e);
-                    // En cas de panne internet, on efface le sablier proprement
+                    console.error("L'API OSM a échoué :", e);
                     sommetsAchercher.forEach(s => {
                         let elHtml = document.getElementById(`nom-montee-${s.index}`);
                         if (elHtml) { 
@@ -498,7 +497,7 @@
                 const trackPoints = xmlDoc.getElementsByTagName("trkpt");
                 const waypointsNodes = xmlDoc.getElementsByTagName("wpt");
                 
-                // Extraction des Waypoints
+                // Extraction des Waypoints GPX
                 let listeWaypoints = [];
                 for (let i = 0; i < waypointsNodes.length; i++) {
                     let wLat = parseFloat(waypointsNodes[i].getAttribute("lat"));
@@ -587,7 +586,6 @@
 
                     genererGraphique(labelsDistance, dataAltitude, rawDistances);
                     ajouterVentSurParcours(pointsMeteoParcours);
-                    // Déclenchement de la détection de montées (Waypoints et OpenStreetMap)
                     detecterEtAfficherMontees(dataAltitude, rawDistances, listeWaypoints);
                 }
             };
