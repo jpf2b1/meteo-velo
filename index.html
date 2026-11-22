@@ -2,7 +2,6 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <!-- Configuration pour mobile : empêche le zoom intempestif -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Météo & Traceur Vélo</title>
     
@@ -98,6 +97,23 @@
         
         .leaflet-div-icon { background: transparent; border: none; }
         .leaflet-popup-content { margin: 10px !important; }
+
+        /* DESIGN DES PASTILLES KILOMÉTRIQUES */
+        .km-marker {
+            background-color: white;
+            border: 2px solid #e74c3c;
+            border-radius: 50%;
+            color: #2c3e50;
+            font-size: 9px;
+            font-weight: bold;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 22px;
+            height: 22px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            pointer-events: none; /* Empêche de bloquer le clic sur la ligne en dessous */
+        }
     </style>
 </head>
 <body>
@@ -160,6 +176,7 @@
 
         let traceGPXLayer = null, graphiqueAltitude = null;
         let marqueursVentParcours = [], donneesGPX = [], pointsMeteoParcours = [], latlngsGlobaux = [];
+        let marqueursDistance = []; // NOUVEAU : Tableau pour stocker les pastilles de distance
         let indexPositionCycliste = null, distanceCyclisteActuelle = 0; 
 
         function initDateDepart() {
@@ -266,7 +283,6 @@
             });
         }
 
-        // === NOUVELLE LECTURE INTELLIGENTE DU GPX ===
         document.getElementById('gpx-input').addEventListener('change', function(e) {
             const file = e.target.files[0];
             if (!file) return;
@@ -279,10 +295,9 @@
                 let latlngs = [], labelsDistance = [], dataAltitude = [], rawDistances = [];
                 let distanceTotale = 0, denivelePositif = 0, derniereLat = null, derniereLon = null, derniereEle = null;
                 
-                // Réinitialisation Globale
                 pointsMeteoParcours = []; donneesGPX = [];
 
-                // ETAPE 1 : Parcours global pour récupérer la distance exacte totale
+                // ETAPE 1 : Parcours global
                 for (let i = 0; i < trackPoints.length; i++) {
                     const lat = parseFloat(trackPoints[i].getAttribute("lat"));
                     const lon = parseFloat(trackPoints[i].getAttribute("lon"));
@@ -307,25 +322,19 @@
                 if (latlngs.length > 0) {
                     latlngsGlobaux = latlngs; 
                     
-                    // ETAPE 2 : Définition de l'intervalle intelligent selon la distance totale
-                    let intervalleMeteo = 20; // Par défaut
+                    // ETAPE 2 : Définition des intervalles Météo
+                    let intervalleMeteo = 20;
                     if (distanceTotale < 30) intervalleMeteo = 5;
                     else if (distanceTotale < 60) intervalleMeteo = 10;
                     else if (distanceTotale < 100) intervalleMeteo = 15;
                     else if (distanceTotale < 200) intervalleMeteo = 20;
                     else intervalleMeteo = 30;
 
-                    // ETAPE 3 : Création des points météo avec cet intervalle
-                    let prochainPalier = intervalleMeteo;
+                    let prochainPalierMeteo = intervalleMeteo;
                     for (let i = 0; i < donneesGPX.length; i++) {
-                        if (donneesGPX[i].distance >= prochainPalier) {
-                            pointsMeteoParcours.push({ 
-                                lat: donneesGPX[i].lat, 
-                                lon: donneesGPX[i].lon, 
-                                km: prochainPalier, 
-                                estArrivee: false 
-                            });
-                            prochainPalier += intervalleMeteo;
+                        if (donneesGPX[i].distance >= prochainPalierMeteo) {
+                            pointsMeteoParcours.push({ lat: donneesGPX[i].lat, lon: donneesGPX[i].lon, km: prochainPalierMeteo, estArrivee: false });
+                            prochainPalierMeteo += intervalleMeteo;
                         }
                     }
 
@@ -334,11 +343,39 @@
                     traceGPXLayer = L.polyline(latlngs, {color: 'red', weight: 4}).addTo(map);
                     map.fitBounds(traceGPXLayer.getBounds());
 
-                    // Gestion propre du marqueur d'arrivée (pour éviter un doublon s'il est très proche du dernier palier)
+                    // NOUVEAU : ETAPE 3 - Affichage des repères Kilométriques sur le tracé
+                    marqueursDistance.forEach(m => map.removeLayer(m));
+                    marqueursDistance = [];
+
+                    // Calcul de l'intervalle idéal pour les pastilles de distance
+                    let intervalleKm = 10;
+                    if (distanceTotale < 15) intervalleKm = 1;
+                    else if (distanceTotale < 50) intervalleKm = 5;
+                    else if (distanceTotale < 100) intervalleKm = 10;
+                    else intervalleKm = 20;
+
+                    let prochainKm = intervalleKm;
+                    for (let i = 0; i < donneesGPX.length; i++) {
+                        if (donneesGPX[i].distance >= prochainKm) {
+                            // On évite de placer une pastille kilométrique si on est presque à l'arrivée (ça ferait doublon)
+                            if (distanceTotale - prochainKm > (intervalleKm * 0.2)) {
+                                let iconeKm = L.divIcon({
+                                    html: `<div class="km-marker">${prochainKm}</div>`,
+                                    className: '', // Enlève le fond transparent par défaut de Leaflet
+                                    iconSize: [22, 22],
+                                    iconAnchor: [11, 11]
+                                });
+                                let marqueurKm = L.marker([donneesGPX[i].lat, donneesGPX[i].lon], {icon: iconeKm, interactive: false}).addTo(map);
+                                marqueursDistance.push(marqueurKm);
+                            }
+                            prochainKm += intervalleKm;
+                        }
+                    }
+
+                    // Sécurité pour le marqueur Météo d'arrivée
                     if (pointsMeteoParcours.length > 0 && (distanceTotale - pointsMeteoParcours[pointsMeteoParcours.length - 1].km < (intervalleMeteo * 0.2))) {
                         pointsMeteoParcours.pop(); 
                     }
-                    // Ajout du point final
                     pointsMeteoParcours.push({ lat: derniereLat, lon: derniereLon, km: distanceTotale.toFixed(1), estArrivee: true });
 
                     // Maj de l'interface
