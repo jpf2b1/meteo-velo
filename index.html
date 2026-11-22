@@ -377,7 +377,7 @@
                 setTimeout(() => { if(map) map.invalidateSize(); }, 100);
             });
 
-            let sommetsAchercher = []; // Liste d'attente pour la recherche groupée OSM
+            let sommetsAchercher = [];
 
             ascensionsDetectees.forEach((montee, index) => {
                 let latSommet = latlngsGlobaux[montee.idxFin][0];
@@ -385,18 +385,16 @@
                 let nomAscension = `Montée ${index + 1}`;
                 let distMinWpt = Infinity;
 
-                // 1. RECHERCHE DANS LES WAYPOINTS DU GPX (Immédiat)
                 if (listeWaypoints && listeWaypoints.length > 0) {
                     listeWaypoints.forEach(wp => {
                         let d = calculerDistance(latSommet, lonSommet, wp.lat, wp.lon) * 1000;
-                        if (d < 500 && d < distMinWpt) { // 500m de tolérance
+                        if (d < 500 && d < distMinWpt) {
                             distMinWpt = d;
                             nomAscension = wp.name;
                         }
                     });
                 }
 
-                // Préparation de l'interface en attente OSM
                 let isRechercheOSM = false;
                 if (nomAscension.startsWith("Montée")) {
                     nomAscension = `Montée ${index + 1} ⏳`;
@@ -436,30 +434,29 @@
                 conteneur.appendChild(div);
             });
 
-            // 2. RECHERCHE GROUPÉE OPENSTREETMAP ULTRA-ROBUSTE
             if (sommetsAchercher.length > 0) {
-                // Rayon très large (2000m) et requête simplifiée
-                let subQueries = sommetsAchercher.map(s => `node(around:2000,${s.lat},${s.lon})["natural"="saddle"]["name"];node(around:2000,${s.lat},${s.lon})["mountain_pass"="yes"]["name"];node(around:2000,${s.lat},${s.lon})["name"~"^(Col|Côte|Cote|Mont|Pic|Puy|Pas|Port|Sommet) "];`).join("");
-                const queryOSM = `[out:json];(${subQueries});out body;`;
+                let subQueries = sommetsAchercher.map(s => `node(around:1500,${s.lat},${s.lon})["natural"="saddle"]["name"];node(around:1500,${s.lat},${s.lon})["mountain_pass"="yes"]["name"];`).join("");
+                const queryOSM = `[out:json][timeout:15];(${subQueries});out body;`;
                 
-                fetch(`https://overpass-api.de/api/interpreter`, {
+                fetch(`https://overpass.kumi.systems/api/interpreter`, {
                     method: 'POST',
                     body: "data=" + encodeURIComponent(queryOSM),
                     headers: { "Content-type": "application/x-www-form-urlencoded" }
                 })
-                .then(r => r.json())
+                .then(r => {
+                    if (!r.ok) throw new Error("Erreur serveur : " + r.status);
+                    return r.json();
+                })
                 .then(data => {
                     sommetsAchercher.forEach(s => {
                         let bestName = `Montée ${s.index + 1}`;
-                        let distMinOSM = 2.0; // Tolérance géante de 2 km
+                        let distMinOSM = 1.8; 
 
                         if (data.elements && data.elements.length > 0) {
                             data.elements.forEach(el => {
                                 if (el.lat && el.lon && el.tags && el.tags.name) {
                                     let d = calculerDistance(s.lat, s.lon, el.lat, el.lon);
-                                    let nomMin = el.tags.name.toLowerCase();
-                                    
-                                    if (d < distMinOSM && (el.tags.mountain_pass === 'yes' || el.tags.natural === 'saddle' || el.tags.natural === 'peak' || nomMin.includes("col ") || nomMin.includes("côte ") || nomMin.includes("mont ") || nomMin.includes("pic "))) {
+                                    if (d < distMinOSM) {
                                         distMinOSM = d;
                                         bestName = el.tags.name;
                                     }
@@ -497,7 +494,6 @@
                 const trackPoints = xmlDoc.getElementsByTagName("trkpt");
                 const waypointsNodes = xmlDoc.getElementsByTagName("wpt");
                 
-                // Extraction des Waypoints GPX
                 let listeWaypoints = [];
                 for (let i = 0; i < waypointsNodes.length; i++) {
                     let wLat = parseFloat(waypointsNodes[i].getAttribute("lat"));
