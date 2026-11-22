@@ -8,6 +8,7 @@
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" id="meta-theme-color" content="#2980b9">
     <link rel="apple-touch-icon" href="icon-192.png">
+    <link rel="icon" href="data:,">
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -332,7 +333,7 @@
             if (recentrerCarte) map.panTo([donneesGPX[index].lat, donneesGPX[index].lon]);
         }
 
-        function detecterEtAfficherMontees(dataAltitude, rawDistances, listeWaypoints) {
+        async function detecterEtAfficherMontees(dataAltitude, rawDistances, listeWaypoints) {
             let ascensionsDetectees = []; let indexDebut = -1; let altMaxLocale = -Infinity;
             for (let i = 1; i < dataAltitude.length; i++) {
                 let alt = dataAltitude[i];
@@ -435,51 +436,63 @@
             });
 
             if (sommetsAchercher.length > 0) {
-                let subQueries = sommetsAchercher.map(s => `node(around:1500,${s.lat},${s.lon})["natural"="saddle"]["name"];node(around:1500,${s.lat},${s.lon})["mountain_pass"="yes"]["name"];`).join("");
-                const queryOSM = `[out:json][timeout:15];(${subQueries});out body;`;
+                let subQueries = sommetsAchercher.map(s => `node(around:1200,${s.lat},${s.lon})["mountain_pass"="yes"]["name"];`).join("");
+                const queryOSM = `[out:json][timeout:8];(${subQueries});out body;`;
                 
-                fetch(`https://overpass.kumi.systems/api/interpreter`, {
-                    method: 'POST',
-                    body: "data=" + encodeURIComponent(queryOSM),
-                    headers: { "Content-type": "application/x-www-form-urlencoded" }
-                })
-                .then(r => {
-                    if (!r.ok) throw new Error("Erreur serveur : " + r.status);
-                    return r.json();
-                })
-                .then(data => {
-                    sommetsAchercher.forEach(s => {
-                        let bestName = `Montée ${s.index + 1}`;
-                        let distMinOSM = 1.8; 
+                const serveursOverpass = [
+                    "https://overpass-api.de/api/interpreter",
+                    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+                    "https://overpass.private.coffee/api/interpreter"
+                ];
 
-                        if (data.elements && data.elements.length > 0) {
-                            data.elements.forEach(el => {
-                                if (el.lat && el.lon && el.tags && el.tags.name) {
-                                    let d = calculerDistance(s.lat, s.lon, el.lat, el.lon);
-                                    if (d < distMinOSM) {
-                                        distMinOSM = d;
-                                        bestName = el.tags.name;
-                                    }
+                let donneesTrouvees = null;
+
+                for (const url of serveursOverpass) {
+                    try {
+                        const controller = new AbortController();
+                        const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+                        const response = await fetch(url, {
+                            method: 'POST',
+                            body: "data=" + encodeURIComponent(queryOSM),
+                            headers: { "Content-type": "application/x-www-form-urlencoded" },
+                            signal: controller.signal
+                        });
+                        
+                        clearTimeout(timeoutId);
+
+                        if (response.ok) {
+                            donneesTrouvees = await response.json();
+                            console.log("Succès avec le serveur :", url);
+                            break;
+                        }
+                    } catch (err) {
+                        console.warn("Serveur trop lent ou indisponible, passage au suivant :", url);
+                    }
+                }
+
+                sommetsAchercher.forEach(s => {
+                    let bestName = `Montée ${s.index + 1}`;
+                    let distMinOSM = 1.5;
+
+                    if (donneesTrouvees && donneesTrouvees.elements && donneesTrouvees.elements.length > 0) {
+                        donneesTrouvees.elements.forEach(el => {
+                            if (el.lat && el.lon && el.tags && el.tags.name) {
+                                let d = calculerDistance(s.lat, s.lon, el.lat, el.lon);
+                                if (d < distMinOSM) {
+                                    distMinOSM = d;
+                                    bestName = el.tags.name;
                                 }
-                            });
-                        }
+                            }
+                        });
+                    }
 
-                        let elHtml = document.getElementById(`nom-montee-${s.index}`);
-                        if (elHtml) {
-                            elHtml.innerText = bestName;
-                            elHtml.title = bestName;
-                            elHtml.style.color = "var(--text-primary)"; 
-                        }
-                    });
-                }).catch(e => {
-                    console.error("L'API OSM a échoué :", e);
-                    sommetsAchercher.forEach(s => {
-                        let elHtml = document.getElementById(`nom-montee-${s.index}`);
-                        if (elHtml) { 
-                            elHtml.innerText = `Montée ${s.index + 1}`; 
-                            elHtml.style.color = "var(--text-primary)"; 
-                        }
-                    });
+                    let elHtml = document.getElementById(`nom-montee-${s.index}`);
+                    if (elHtml) {
+                        elHtml.innerText = bestName;
+                        elHtml.title = bestName;
+                        elHtml.style.color = "var(--text-primary)"; 
+                    }
                 });
             }
         }
