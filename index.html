@@ -34,6 +34,7 @@
             --box-vent: rgba(255, 255, 255, 0.6);
             --map-filter: none;
             --text-pente-legende: #7f8c8d;
+            --card-bg: #f8f9fa;
         }
 
         [data-theme="dark"] {
@@ -52,6 +53,7 @@
             --box-vent: rgba(20, 20, 20, 0.6);
             --map-filter: invert(90%) hue-rotate(180deg) brightness(95%) contrast(90%);
             --text-pente-legende: #a4b0be;
+            --card-bg: #2d2d2d;
         }
 
         body, html { 
@@ -64,10 +66,7 @@
         }
         
         #map { flex: 1; width: 100%; z-index: 1; }
-        .leaflet-container {
-            filter: var(--map-filter);
-            transition: filter 0.3s ease;
-        }
+        .leaflet-container { filter: var(--map-filter); transition: filter 0.3s ease; }
         
         #gpx-panel { 
             display: none; background: var(--bg-panel); border-top: 2px solid var(--border-panel); 
@@ -138,18 +137,26 @@
         [data-theme="dark"] .btn-toggle { border-color: #10ac84; color: #10ac84; }
         
         #liste-montees {
-            display: none; max-height: 140px; overflow-y: auto; 
-            margin-top: 10px; padding-right: 5px;
+            display: none; max-height: 160px; overflow-y: auto; 
+            margin-top: 15px; padding-right: 5px; scrollbar-width: thin;
         }
         .montee-item {
             display: flex; justify-content: space-between; align-items: center;
-            background: var(--bg-header); border-left: 5px solid var(--border-panel); margin-bottom: 5px;
-            padding: 8px; border-radius: 4px; cursor: pointer; font-size: 12px;
-            box-shadow: 0 1px 3px var(--shadow); color: var(--text-primary);
+            background: var(--card-bg); border: 1px solid var(--widget-border);
+            border-left: 6px solid var(--border-panel); margin-bottom: 8px;
+            padding: 10px 12px; border-radius: 8px; cursor: pointer; font-size: 13px;
+            box-shadow: 0 2px 5px var(--shadow); color: var(--text-primary);
+            transition: transform 0.2s, background-color 0.2s, box-shadow 0.2s;
         }
-        .montee-item:active { background: var(--shadow); transform: scale(0.98); }
-        .montee-data { font-weight: bold; color: var(--text-primary); }
-        .montee-pente { background: #e74c3c; color: white; padding: 2px 6px; border-radius: 10px; font-weight: bold; } 
+        .montee-item:hover { background: var(--bg-header); }
+        .montee-item:active { transform: scale(0.98); box-shadow: 0 1px 2px var(--shadow); }
+        .montee-data { font-weight: bold; color: var(--text-primary); font-size: 14px; }
+        .montee-pente { 
+            background: #e74c3c; color: white; padding: 4px 8px; 
+            border-radius: 12px; font-weight: bold; font-size: 13px;
+            text-shadow: 0 1px 1px rgba(0,0,0,0.3); display: inline-block;
+            min-width: 45px; text-align: center;
+        } 
         .pente-moyenne { background: #f39c12; } 
         .pente-douce { background: #27ae60; }   
 
@@ -275,7 +282,7 @@
                 document.getElementById('meta-theme-color').setAttribute('content', '#10ac84');
             }
             
-            if (donneesGPX.length > 0) {
+            if (donneesGPX.length > 0 && graphiqueAltitude) {
                 const labelsDistance = donneesGPX.map(p => p.distance.toFixed(1));
                 const altTemp = graphiqueAltitude.data.datasets[0].data;
                 const rawDistances = donneesGPX.map(p => p.distance);
@@ -325,7 +332,8 @@
             if (recentrerCarte) map.panTo([donneesGPX[index].lat, donneesGPX[index].lon]);
         }
 
-        function detecterEtAfficherMontees(dataAltitude, rawDistances) {
+        // Ajout du paramètre listeWaypoints pour la détection des noms
+        function detecterEtAfficherMontees(dataAltitude, rawDistances, listeWaypoints) {
             let ascensionsDetectees = []; let indexDebut = -1; let altMaxLocale = -Infinity;
             for (let i = 1; i < dataAltitude.length; i++) {
                 let alt = dataAltitude[i];
@@ -356,14 +364,13 @@
 
             const conteneur = document.getElementById('liste-montees'); conteneur.innerHTML = ""; 
             if (ascensionsDetectees.length === 0) {
-                conteneur.innerHTML = "<div style='text-align:center; padding:10px; color:var(--text-secondary);'>Aucune difficulté majeure détectée.</div>"; return;
+                conteneur.innerHTML = "<div style='text-align:center; padding:10px; color:var(--text-secondary); font-style:italic;'>Aucune difficulté majeure détectée.</div>"; return;
             }
             const entete = document.createElement('div');
-            
             const isDark = document.body.getAttribute('data-theme') === 'dark';
             const coulTitre = isDark ? '#10ac84' : '#2980b9';
 
-            entete.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; border-bottom:1px solid var(--shadow); padding-bottom:5px;"><strong style="color:${coulTitre};">⛰️ Profil des ascensions</strong><button id="btn-fermer-montees" style="background:none; border:none; font-size:16px; cursor:pointer; color:var(--text-primary);">❌</button></div>`;
+            entete.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid var(--shadow); padding-bottom:8px;"><strong style="color:${coulTitre}; font-size:15px;">⛰️ Profil des ascensions</strong><button id="btn-fermer-montees" style="background:none; border:none; font-size:16px; cursor:pointer; color:var(--text-primary); transition:transform 0.2s;">❌</button></div>`;
             conteneur.appendChild(entete);
 
             entete.querySelector('#btn-fermer-montees').addEventListener('click', function() {
@@ -372,15 +379,77 @@
             });
 
             ascensionsDetectees.forEach((montee, index) => {
+                let latSommet = latlngsGlobaux[montee.idxFin][0];
+                let lonSommet = latlngsGlobaux[montee.idxFin][1];
+                let nomAscension = `Montée ${index + 1}`;
+                let distMin = Infinity;
+
+                // 1. RECHERCHE DANS LES WAYPOINTS DU GPX (Strava, Komoot...)
+                if (listeWaypoints && listeWaypoints.length > 0) {
+                    listeWaypoints.forEach(wp => {
+                        let d = calculerDistance(latSommet, lonSommet, wp.lat, wp.lon) * 1000;
+                        if (d < 500 && d < distMin) { // Moins de 500 mètres
+                            distMin = d;
+                            nomAscension = wp.name;
+                        }
+                    });
+                }
+
                 let classePente = "montee-pente"; 
-                if (montee.pente < 4) classePente += " pente-douce"; else if (montee.pente < 7) classePente += " pente-moyenne"; 
-                const div = document.createElement('div'); div.className = 'montee-item';
-                div.innerHTML = `<div>Montée ${index + 1} <span style="color:var(--text-secondary); font-size:10px;">(Km ${montee.kmDebut.toFixed(1)})</span></div><div class="montee-data">${montee.distance.toFixed(1)} km</div><div class="montee-data">+ ${Math.round(montee.denivele)} m</div><div class="${classePente}">${montee.pente.toFixed(1)} %</div>`;
+                let couleurBordure = '#e74c3c'; 
+                
+                if (montee.pente < 4) {
+                    classePente += " pente-douce"; couleurBordure = '#27ae60'; 
+                } else if (montee.pente < 7) {
+                    classePente += " pente-moyenne"; couleurBordure = '#f39c12'; 
+                } 
+
+                const div = document.createElement('div'); 
+                div.className = 'montee-item';
+                div.style.borderLeftColor = couleurBordure; 
+                
+                div.innerHTML = `
+                    <div style="flex: 1.2; overflow: hidden;">
+                        <div id="nom-montee-${index}" style="font-weight:900; margin-bottom:2px; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${nomAscension}">${nomAscension}</div>
+                        <div style="color:var(--text-secondary); font-size:11px;">📍 Km ${montee.kmDebut.toFixed(1)}</div>
+                    </div>
+                    <div class="montee-data" style="flex: 1; text-align:center;">
+                        ${montee.distance.toFixed(1)} km<br><span style="font-size:10px; color:var(--text-secondary); font-weight:normal;">Distance</span>
+                    </div>
+                    <div class="montee-data" style="flex: 1; text-align:center;">
+                        +${Math.round(montee.denivele)} m<br><span style="font-size:10px; color:var(--text-secondary); font-weight:normal;">Dénivelé</span>
+                    </div>
+                    <div style="flex: 0.8; text-align:right;">
+                        <div class="${classePente}">${montee.pente.toFixed(1)}%</div>
+                    </div>
+                `;
                 div.onclick = function() {
                     const portion = latlngsGlobaux.slice(montee.idxDebut, montee.idxFin + 1);
                     map.fitBounds(L.polyline(portion).getBounds(), {padding: [30, 30]});
                 };
                 conteneur.appendChild(div);
+
+                // 2. RECHERCHE INTELLIGENTE VIA OPENSTREETMAP (Overpass API) si aucun nom trouvé dans le GPX
+                if (nomAscension.startsWith("Montée")) {
+                    const query = `[out:json];node(around:600,${latSommet},${lonSommet})["name"];out;`;
+                    fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`)
+                    .then(r => r.json())
+                    .then(data => {
+                        // Filtre pour ne garder que les cols, pics ou noms contenant Col/Côte/Mont
+                        let cols = data.elements.filter(e => 
+                            e.tags && e.tags.name && 
+                            (e.tags.mountain_pass === 'yes' || e.tags.natural === 'saddle' || e.tags.natural === 'peak' || /col |côte |mont |pic |puys /i.test(e.tags.name))
+                        );
+                        if (cols.length > 0) {
+                            let vraiNom = cols[0].tags.name;
+                            let elementTexte = document.getElementById(`nom-montee-${index}`);
+                            if(elementTexte) {
+                                elementTexte.innerText = vraiNom;
+                                elementTexte.title = vraiNom;
+                            }
+                        }
+                    }).catch(e => console.log("Erreur API topo (ignorez si hors-ligne) :", e));
+                }
             });
         }
 
@@ -392,6 +461,18 @@
             reader.onload = function(evt) {
                 const xmlDoc = new DOMParser().parseFromString(evt.target.result, "text/xml");
                 const trackPoints = xmlDoc.getElementsByTagName("trkpt");
+                const waypointsNodes = xmlDoc.getElementsByTagName("wpt");
+                
+                // Extraction des Waypoints
+                let listeWaypoints = [];
+                for (let i = 0; i < waypointsNodes.length; i++) {
+                    let wLat = parseFloat(waypointsNodes[i].getAttribute("lat"));
+                    let wLon = parseFloat(waypointsNodes[i].getAttribute("lon"));
+                    let nameNode = waypointsNodes[i].getElementsByTagName("name")[0];
+                    if (nameNode) {
+                        listeWaypoints.push({ lat: wLat, lon: wLon, name: nameNode.textContent });
+                    }
+                }
                 
                 let latlngs = [], labelsDistance = [], dataAltitude = [], rawDistances = [];
                 let distanceTotale = 0, denivelePositif = 0, derniereLat = null, derniereLon = null, derniereEle = null;
@@ -471,7 +552,8 @@
 
                     genererGraphique(labelsDistance, dataAltitude, rawDistances);
                     ajouterVentSurParcours(pointsMeteoParcours);
-                    detecterEtAfficherMontees(dataAltitude, rawDistances);
+                    // On envoie la liste des waypoints trouvés à notre fonction de détection
+                    detecterEtAfficherMontees(dataAltitude, rawDistances, listeWaypoints);
                 }
             };
             reader.readAsText(file);
@@ -548,17 +630,12 @@
                     const isDark = document.body.getAttribute('data-theme') === 'dark';
                     let couleurVent = isDark ? '#10ac84' : '#27ae60'; 
                     
-                    if (vitKmh >= 30) {
-                        couleurVent = isDark ? '#ff4757' : '#e74c3c'; 
-                    } else if (vitKmh >= 15) {
-                        couleurVent = isDark ? '#ffa502' : '#f39c12'; 
-                    }
+                    if (vitKmh >= 30) { couleurVent = isDark ? '#ff4757' : '#e74c3c'; } 
+                    else if (vitKmh >= 15) { couleurVent = isDark ? '#ffa502' : '#f39c12'; }
 
                     const couleurBordureMeteo = pt.estArrivee ? '#27ae60' : isDark ? '#10ac84' : '#2980b9';
-
                     let probaPluie = prev.pop ? Math.round(prev.pop * 100) : 0;
                     let textePluie = probaPluie > 10 ? `<span style="color: #3498db; font-weight: bold;">💧 ${probaPluie}%</span><br>` : '';
-
                     const isDarkStyling = isDark ? 'background: #1e1e1e; color: #f5f6fa; border: 1px solid #10ac84;' : 'background: white; color: #2c3e50; border: 1px solid ' + couleurBordureMeteo;
 
                     const html = `
@@ -599,7 +676,7 @@
             const isDark = document.body.getAttribute('data-theme') === 'dark';
             const colorGrilleText = isDark ? '#a4b0be' : '#7f8c8d';
             const colorLigneGrille = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
-            const opacite = isDark ? '0.3' : '0.4'; // Un peu plus transparent la nuit pour le confort visuel
+            const opacite = isDark ? '0.3' : '0.4'; 
 
             graphiqueAltitude = new Chart(document.getElementById('elevationChart').getContext('2d'), {
                 type: 'line',
@@ -623,7 +700,6 @@
                                 const pente = ((data[i + 1] - data[i]) / dist) * 100;
                                 return (pente < -1) ? '#3498db' : (pente < 3) ? '#27ae60' : (pente < 7) ? '#f39c12' : '#e74c3c';                 
                             },
-                            // NOUVEAU : Colorisation de la zone de remplissage sous la courbe
                             backgroundColor: ctx => {
                                 if (!rawDistances || ctx.p0DataIndex >= rawDistances.length - 1) return `rgba(39, 174, 96, ${opacite})`; 
                                 const i = ctx.p0DataIndex;
@@ -648,15 +724,8 @@
                         } 
                     }, 
                     scales: { 
-                        x: { 
-                            ticks: { maxTicksLimit: 8, color: colorGrilleText },
-                            grid: { color: colorLigneGrille }
-                        }, 
-                        y: { 
-                            title: { display: true, text: 'Mètres', color: colorGrilleText },
-                            ticks: { color: colorGrilleText },
-                            grid: { color: colorLigneGrille }
-                        } 
+                        x: { ticks: { maxTicksLimit: 8, color: colorGrilleText }, grid: { color: colorLigneGrille } }, 
+                        y: { title: { display: true, text: 'Mètres', color: colorGrilleText }, ticks: { color: colorGrilleText }, grid: { color: colorLigneGrille } } 
                     } 
                 },
                 plugins: [pluginCycliste]
