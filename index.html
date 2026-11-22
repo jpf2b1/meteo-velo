@@ -377,31 +377,38 @@
                 setTimeout(() => { if(map) map.invalidateSize(); }, 100);
             });
 
+            let sommetsAchercher = []; // Liste d'attente pour la recherche groupée
+
             ascensionsDetectees.forEach((montee, index) => {
                 let latSommet = latlngsGlobaux[montee.idxFin][0];
                 let lonSommet = latlngsGlobaux[montee.idxFin][1];
                 let nomAscension = `Montée ${index + 1}`;
-                let distMin = Infinity;
+                let distMinWpt = Infinity;
 
-                // 1. RECHERCHE DANS LES WAYPOINTS DU GPX (Strava, Komoot...)
+                // 1. RECHERCHE DANS LES WAYPOINTS DU GPX (Immédiat)
                 if (listeWaypoints && listeWaypoints.length > 0) {
                     listeWaypoints.forEach(wp => {
                         let d = calculerDistance(latSommet, lonSommet, wp.lat, wp.lon) * 1000;
-                        if (d < 500 && d < distMin) { // Tolérance de 500 mètres
-                            distMin = d;
+                        if (d < 500 && d < distMinWpt) {
+                            distMinWpt = d;
                             nomAscension = wp.name;
                         }
                     });
                 }
 
+                // Préparation de l'interface en attente de la réponse d'OpenStreetMap
+                let isRechercheOSM = false;
+                if (nomAscension.startsWith("Montée")) {
+                    nomAscension = `Montée ${index + 1} ⏳...`;
+                    isRechercheOSM = true;
+                    sommetsAchercher.push({ index: index, lat: latSommet, lon: lonSommet }); // On l'ajoute au tir groupé
+                }
+
                 let classePente = "montee-pente"; 
                 let couleurBordure = '#e74c3c'; 
                 
-                if (montee.pente < 4) {
-                    classePente += " pente-douce"; couleurBordure = '#27ae60'; 
-                } else if (montee.pente < 7) {
-                    classePente += " pente-moyenne"; couleurBordure = '#f39c12'; 
-                } 
+                if (montee.pente < 4) { classePente += " pente-douce"; couleurBordure = '#27ae60'; } 
+                else if (montee.pente < 7) { classePente += " pente-moyenne"; couleurBordure = '#f39c12'; } 
 
                 const div = document.createElement('div'); 
                 div.className = 'montee-item';
@@ -409,7 +416,7 @@
                 
                 div.innerHTML = `
                     <div style="flex: 1.2; overflow: hidden;">
-                        <div id="nom-montee-${index}" style="font-weight:900; margin-bottom:2px; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${nomAscension}">${nomAscension}</div>
+                        <div id="nom-montee-${index}" style="font-weight:900; margin-bottom:2px; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; ${isRechercheOSM ? 'color:var(--text-secondary);' : ''}" title="${nomAscension}">${nomAscension}</div>
                         <div style="color:var(--text-secondary); font-size:11px;">📍 Km ${montee.kmDebut.toFixed(1)}</div>
                     </div>
                     <div class="montee-data" style="flex: 1; text-align:center;">
@@ -427,32 +434,58 @@
                     map.fitBounds(L.polyline(portion).getBounds(), {padding: [30, 30]});
                 };
                 conteneur.appendChild(div);
-
-                // 2. RECHERCHE INTELLIGENTE VIA OPENSTREETMAP avec délai anti-blocage
-                if (nomAscension.startsWith("Montée")) {
-                    setTimeout(() => {
-                        const query = `[out:json];node(around:1200,${latSommet},${lonSommet})["name"];out;`;
-                        
-                        fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`)
-                        .then(r => r.json())
-                        .then(data => {
-                            let cols = data.elements.filter(e => 
-                                e.tags && e.tags.name && 
-                                (e.tags.mountain_pass === 'yes' || e.tags.natural === 'saddle' || e.tags.natural === 'peak' || /(^|\s)(col|côte|cote|mont|pic|puy)(\s|$)/i.test(e.tags.name))
-                            );
-                            
-                            if (cols.length > 0) {
-                                let vraiNom = cols[0].tags.name;
-                                let elementTexte = document.getElementById(`nom-montee-${index}`);
-                                if(elementTexte) {
-                                    elementTexte.innerText = vraiNom;
-                                    elementTexte.title = vraiNom;
-                                }
-                            }
-                        }).catch(e => console.log("Recherche API ignorée :", e));
-                    }, index * 800);
-                }
             });
+
+            // 2. RECHERCHE GROUPÉE OPENSTREETMAP (1 seule requête pour tout le parcours)
+            if (sommetsAchercher.length > 0) {
+                // On assemble toutes les coordonnées en une seule super-requête
+                let subQueries = sommetsAchercher.map(s => `node(around:1000,${s.lat},${s.lon})["natural"="saddle"]["name"];node(around:1000,${s.lat},${s.lon})["mountain_pass"="yes"]["name"];node(around:800,${s.lat},${s.lon})["name"~"^(Col|Côte|Cote|Mont|Pas|Port) ",i];`).join("");
+                const queryOSM = `[out:json];(${subQueries});out body;`;
+                
+                fetch(`https://overpass-api.de/api/interpreter`, {
+                    method: 'POST', // Le mode POST permet d'envoyer des requêtes plus longues sans être bloqué
+                    body: "data=" + encodeURIComponent(queryOSM),
+                    headers: { "Content-type": "application/x-www-form-urlencoded" }
+                })
+                .then(r => r.json())
+                .then(data => {
+                    // Pour chaque sommet que l'on cherchait, on regarde s'il y a un résultat à moins d'un kilomètre
+                    sommetsAchercher.forEach(s => {
+                        let bestName = `Montée ${s.index + 1}`;
+                        let distMinOSM = 1.2; // 1.2 km de tolérance max
+
+                        if (data.elements && data.elements.length > 0) {
+                            data.elements.forEach(el => {
+                                if (el.lat && el.lon && el.tags && el.tags.name) {
+                                    let d = calculerDistance(s.lat, s.lon, el.lat, el.lon);
+                                    if (d < distMinOSM) {
+                                        distMinOSM = d;
+                                        bestName = el.tags.name;
+                                    }
+                                }
+                            });
+                        }
+
+                        // Mise à jour visuelle du texte dans la carte
+                        let elHtml = document.getElementById(`nom-montee-${s.index}`);
+                        if (elHtml) {
+                            elHtml.innerText = bestName;
+                            elHtml.title = bestName;
+                            elHtml.style.color = "var(--text-primary)"; // On remet la couleur normale (plus grise)
+                        }
+                    });
+                }).catch(e => {
+                    console.log("Erreur de connexion à OpenStreetMap:", e);
+                    // En cas de panne internet, on efface le sablier proprement
+                    sommetsAchercher.forEach(s => {
+                        let elHtml = document.getElementById(`nom-montee-${s.index}`);
+                        if (elHtml) { 
+                            elHtml.innerText = `Montée ${s.index + 1}`; 
+                            elHtml.style.color = "var(--text-primary)"; 
+                        }
+                    });
+                });
+            }
         }
 
         document.getElementById('gpx-input').addEventListener('change', function(e) {
@@ -465,7 +498,7 @@
                 const trackPoints = xmlDoc.getElementsByTagName("trkpt");
                 const waypointsNodes = xmlDoc.getElementsByTagName("wpt");
                 
-                // Extraction des Waypoints GPX
+                // Extraction des Waypoints
                 let listeWaypoints = [];
                 for (let i = 0; i < waypointsNodes.length; i++) {
                     let wLat = parseFloat(waypointsNodes[i].getAttribute("lat"));
@@ -554,6 +587,7 @@
 
                     genererGraphique(labelsDistance, dataAltitude, rawDistances);
                     ajouterVentSurParcours(pointsMeteoParcours);
+                    // Déclenchement de la détection de montées (Waypoints et OpenStreetMap)
                     detecterEtAfficherMontees(dataAltitude, rawDistances, listeWaypoints);
                 }
             };
