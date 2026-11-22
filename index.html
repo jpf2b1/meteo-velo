@@ -19,7 +19,6 @@
            VARIABLES DE THÈMES (JOUR / NUIT SOMBRE SPORTIF)
            ========================================================================== */
         :root {
-            /* Mode Jour par défaut */
             --bg-body: #ffffff;
             --bg-panel: #ffffff;
             --bg-header: #f1f2f6;
@@ -38,11 +37,10 @@
         }
 
         [data-theme="dark"] {
-            /* Mode Nuit / Sombre Sportif */
             --bg-body: #121212;
             --bg-panel: #1e1e1e;
             --bg-header: #2d2d2d;
-            --border-panel: #10ac84; /* Vert électrique plus sportif */
+            --border-panel: #10ac84; 
             --text-primary: #f5f6fa;
             --text-secondary: #a4b0be;
             --btn-bg: rgba(30, 30, 30, 0.9);
@@ -601,6 +599,7 @@
             const isDark = document.body.getAttribute('data-theme') === 'dark';
             const colorGrilleText = isDark ? '#a4b0be' : '#7f8c8d';
             const colorLigneGrille = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
+            const opacite = isDark ? '0.3' : '0.4'; // Un peu plus transparent la nuit pour le confort visuel
 
             graphiqueAltitude = new Chart(document.getElementById('elevationChart').getContext('2d'), {
                 type: 'line',
@@ -611,7 +610,7 @@
                         data: data, 
                         borderWidth: 3, 
                         borderColor: '#27ae60',
-                        backgroundColor: isDark ? 'rgba(16, 172, 132, 0.1)' : 'rgba(189, 195, 199, 0.2)', 
+                        backgroundColor: `rgba(39, 174, 96, ${opacite})`, 
                         fill: true, 
                         pointRadius: 0, 
                         tension: 0.1, 
@@ -623,6 +622,15 @@
                                 if (dist <= 0.1) return '#27ae60';
                                 const pente = ((data[i + 1] - data[i]) / dist) * 100;
                                 return (pente < -1) ? '#3498db' : (pente < 3) ? '#27ae60' : (pente < 7) ? '#f39c12' : '#e74c3c';                 
+                            },
+                            // NOUVEAU : Colorisation de la zone de remplissage sous la courbe
+                            backgroundColor: ctx => {
+                                if (!rawDistances || ctx.p0DataIndex >= rawDistances.length - 1) return `rgba(39, 174, 96, ${opacite})`; 
+                                const i = ctx.p0DataIndex;
+                                const dist = (rawDistances[i + 1] - rawDistances[i]) * 1000;
+                                if (dist <= 0.1) return `rgba(39, 174, 96, ${opacite})`;
+                                const pente = ((data[i + 1] - data[i]) / dist) * 100;
+                                return (pente < -1) ? `rgba(52, 152, 219, ${opacite})` : (pente < 3) ? `rgba(39, 174, 96, ${opacite})` : (pente < 7) ? `rgba(243, 156, 18, ${opacite})` : `rgba(231, 76, 60, ${opacite})`;                 
                             }
                         }
                     }]
