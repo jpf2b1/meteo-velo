@@ -26,6 +26,15 @@
             display: none; background: white; border-top: 2px solid #2980b9; 
             box-shadow: 0 -4px 10px rgba(0,0,0,0.1); padding: 10px; z-index: 1000; 
         }
+
+        /* NOUVEAU : En-tête cliquable pour réduire/agrandir le panneau */
+        #panel-header {
+            text-align: center; font-size: 14px; font-weight: bold; color: #2c3e50;
+            padding: 8px 0; margin: -10px -10px 10px -10px; background: #f1f2f6;
+            cursor: pointer; border-bottom: 1px solid #dcdde1; 
+            display: flex; justify-content: center; align-items: center; gap: 8px;
+        }
+        #panel-header:active { background: #dfe4ea; }
         
         .top-controls { 
             position: absolute; top: 15px; left: 50%; transform: translateX(-50%); 
@@ -99,19 +108,10 @@
         .leaflet-popup-content { margin: 10px !important; }
 
         .km-marker {
-            background-color: white;
-            border: 2px solid #e74c3c;
-            border-radius: 50%;
-            color: #2c3e50;
-            font-size: 9px;
-            font-weight: bold;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            width: 22px;
-            height: 22px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-            pointer-events: none; 
+            background-color: white; border: 2px solid #e74c3c; border-radius: 50%;
+            color: #2c3e50; font-size: 9px; font-weight: bold; display: flex;
+            justify-content: center; align-items: center; width: 22px; height: 22px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3); pointer-events: none; 
         }
     </style>
 </head>
@@ -143,26 +143,32 @@
     <div id="map"></div>
 
     <div id="gpx-panel">
-        <div class="planification-box">
-            🗓️ Départ : <input type="datetime-local" id="date-depart" class="input-date">
-        </div>
-        <div class="stats-gpx">
-            <div>📏 <span id="stat-dist">0</span> km</div>
-            <div>⛰️ <span id="stat-denivele">0</span> m</div>
-            <div>⏱️ Moy: <input type="number" id="vitesse-moyenne" class="input-vitesse" value="25" min="10" max="50"> km/h</div>
-            <button id="btn-cols" class="btn-toggle" style="border-color:#e74c3c; color:#e74c3c;">⛰️ Montées 🔽</button>
-            <button id="btn-toggle-legende" class="btn-toggle">Légende 🔽</button>
-            <button id="btn-reset-zoom" class="btn-reset">🔍 Rétablir</button>
-        </div>
+        <!-- NOUVEAU : Le bouton pour réduire/agrandir le panneau -->
+        <div id="panel-header">🔽 Masquer le profil</div>
         
-        <div id="liste-montees"></div>
-        <div class="chart-container"><canvas id="elevationChart"></canvas></div>
-        
-        <div class="legende-pente" id="legende-couleurs">
-            <span style="color:#3498db">■</span> Descente 
-            <span style="color:#27ae60; margin-left: 8px;">■</span> &lt; 3% 
-            <span style="color:#f39c12; margin-left: 8px;">■</span> 3-7% 
-            <span style="color:#e74c3c; margin-left: 8px;">■</span> &gt; 7%
+        <!-- Conteneur qui sera masqué lors de la réduction -->
+        <div id="panel-content">
+            <div class="planification-box">
+                🗓️ Départ : <input type="datetime-local" id="date-depart" class="input-date">
+            </div>
+            <div class="stats-gpx">
+                <div>📏 <span id="stat-dist">0</span> km</div>
+                <div>⛰️ <span id="stat-denivele">0</span> m</div>
+                <div>⏱️ Moy: <input type="number" id="vitesse-moyenne" class="input-vitesse" value="25" min="10" max="50"> km/h</div>
+                <button id="btn-cols" class="btn-toggle" style="border-color:#e74c3c; color:#e74c3c;">⛰️ Montées 🔽</button>
+                <button id="btn-toggle-legende" class="btn-toggle">Légende 🔽</button>
+                <button id="btn-reset-zoom" class="btn-reset">🔍 Rétablir</button>
+            </div>
+            
+            <div id="liste-montees"></div>
+            <div class="chart-container"><canvas id="elevationChart"></canvas></div>
+            
+            <div class="legende-pente" id="legende-couleurs">
+                <span style="color:#3498db">■</span> Descente 
+                <span style="color:#27ae60; margin-left: 8px;">■</span> &lt; 3% 
+                <span style="color:#f39c12; margin-left: 8px;">■</span> 3-7% 
+                <span style="color:#e74c3c; margin-left: 8px;">■</span> &gt; 7%
+            </div>
         </div>
     </div>
 
@@ -192,7 +198,6 @@
             return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
         }
 
-        // === DETECTION DES MONTEES (ClimbPro) ===
         function detecterEtAfficherMontees(dataAltitude, rawDistances) {
             let ascensionsDetectees = [];
             let indexDebut = -1;
@@ -211,9 +216,7 @@
                         let vraiIndexSommet = indexDebut;
                         let vraieAltSommet = dataAltitude[indexDebut];
                         for(let j = indexDebut; j <= i; j++){
-                            if(dataAltitude[j] > vraieAltSommet) {
-                                vraieAltSommet = dataAltitude[j]; vraiIndexSommet = j;
-                            }
+                            if(dataAltitude[j] > vraieAltSommet) { vraieAltSommet = dataAltitude[j]; vraiIndexSommet = j; }
                         }
                         
                         let denivelePositif = vraieAltSommet - dataAltitude[indexDebut];
@@ -222,16 +225,12 @@
                         if (denivelePositif >= 30 && distanceMontee >= 0.5) {
                             let pente = (denivelePositif / (distanceMontee * 1000)) * 100;
                             ascensionsDetectees.push({
-                                kmDebut: rawDistances[indexDebut],
-                                distance: distanceMontee,
-                                denivele: denivelePositif,
-                                pente: pente,
-                                idxDebut: indexDebut,
-                                idxFin: vraiIndexSommet
+                                kmDebut: rawDistances[indexDebut], distance: distanceMontee,
+                                denivele: denivelePositif, pente: pente,
+                                idxDebut: indexDebut, idxFin: vraiIndexSommet
                             });
                         }
-                        indexDebut = -1;
-                        altMaxLocale = -Infinity;
+                        indexDebut = -1; altMaxLocale = -Infinity;
                     }
                 }
             }
@@ -254,8 +253,7 @@
             conteneur.appendChild(entete);
 
             entete.querySelector('#btn-fermer-montees').addEventListener('click', function() {
-                conteneur.style.display = 'none'; 
-                document.getElementById('btn-cols').innerText = "⛰️ Montées 🔽"; 
+                conteneur.style.display = 'none'; document.getElementById('btn-cols').innerText = "⛰️ Montées 🔽"; 
                 setTimeout(() => { if(map) map.invalidateSize(); }, 100);
             });
 
@@ -272,12 +270,10 @@
                     <div class="montee-data">+ ${Math.round(montee.denivele)} m</div>
                     <div class="${classePente}">${montee.pente.toFixed(1)} %</div>
                 `;
-                
                 div.onclick = function() {
                     const portion = latlngsGlobaux.slice(montee.idxDebut, montee.idxFin + 1);
                     map.fitBounds(L.polyline(portion).getBounds(), {padding: [30, 30]});
                 };
-                
                 conteneur.appendChild(div);
             });
         }
@@ -293,7 +289,6 @@
                 
                 let latlngs = [], labelsDistance = [], dataAltitude = [], rawDistances = [];
                 let distanceTotale = 0, denivelePositif = 0, derniereLat = null, derniereLon = null, derniereEle = null;
-                
                 pointsMeteoParcours = []; donneesGPX = [];
 
                 for (let i = 0; i < trackPoints.length; i++) {
@@ -313,7 +308,6 @@
                     labelsDistance.push(distanceTotale.toFixed(1));
                     dataAltitude.push(ele);
                     rawDistances.push(distanceTotale); 
-                    
                     derniereLat = lat; derniereLon = lon; derniereEle = ele;
                 }
 
@@ -360,11 +354,13 @@
                         }
                     }
 
-                    if (pointsMeteoParcours.length > 0 && (distanceTotale - pointsMeteoParcours[pointsMeteoParcours.length - 1].km < (intervalleMeteo * 0.2))) {
-                        pointsMeteoParcours.pop(); 
-                    }
+                    if (pointsMeteoParcours.length > 0 && (distanceTotale - pointsMeteoParcours[pointsMeteoParcours.length - 1].km < (intervalleMeteo * 0.2))) { pointsMeteoParcours.pop(); }
                     pointsMeteoParcours.push({ lat: derniereLat, lon: derniereLon, km: distanceTotale.toFixed(1), estArrivee: true });
 
+                    // Affiche le panneau et s'assure qu'il n'est pas réduit lors d'un nouveau chargement
+                    document.getElementById('panel-content').style.display = 'block';
+                    document.getElementById('panel-header').innerHTML = '🔽 Masquer le profil';
+                    
                     document.getElementById('stat-dist').innerText = distanceTotale.toFixed(1);
                     document.getElementById('stat-denivele').innerText = Math.round(denivelePositif);
                     document.getElementById('gpx-panel').style.display = 'block';
@@ -376,6 +372,20 @@
                 }
             };
             reader.readAsText(file);
+        });
+
+        // === ACTION DU NOUVEAU BOUTON "RÉDUIRE/AGRANDIR LE PROFIL" ===
+        document.getElementById('panel-header').addEventListener('click', function() {
+            const content = document.getElementById('panel-content');
+            if (content.style.display === 'none') {
+                content.style.display = 'block';
+                this.innerHTML = '🔽 Masquer le profil';
+            } else {
+                content.style.display = 'none';
+                this.innerHTML = '📊 Afficher le profil';
+            }
+            // Oblige la carte à recalculer sa taille pour remplir l'espace gagné
+            setTimeout(() => { if(map) map.invalidateSize(); }, 100);
         });
 
         document.getElementById('btn-cols').addEventListener('click', function() {
@@ -409,7 +419,6 @@
         document.getElementById('vitesse-moyenne').addEventListener('change', () => { if (pointsMeteoParcours.length > 0) ajouterVentSurParcours(pointsMeteoParcours); });
         document.getElementById('date-depart').addEventListener('change', () => { if (pointsMeteoParcours.length > 0) ajouterVentSurParcours(pointsMeteoParcours); });
 
-        // === METEO INTELLIGENTE SUR LE PARCOURS ===
         function ajouterVentSurParcours(points) {
             marqueursVentParcours.forEach(m => map.removeLayer(m));
             marqueursVentParcours = [];
@@ -421,8 +430,7 @@
                     const htmlPasse = `<div style="background: #bdc3c7; border-radius: 50%; width: 24px; height: 24px; display: flex; justify-content: center; align-items: center; border: 2px solid #95a5a6; margin: 0 auto; opacity: 0.8;"><span style="font-size: 12px;">✅</span></div><div style="background: rgba(255,255,255,0.8); border-radius: 4px; font-size: 9px; font-weight: bold; text-align: center; margin-top: 2px; width: 40px; margin-left: -8px; color: #7f8c8d;">Km ${pt.km}</div>`;
                     const m = L.marker([pt.lat, pt.lon], {icon: L.divIcon({ html: htmlPasse, className: 'custom-vent-icon', iconSize: [24, 40], iconAnchor: [12, 20] })}).addTo(map);
                     m.bindPopup(`<div style="text-align:center; font-weight:bold; color:#7f8c8d;">Vous êtes déjà passé par ici !</div>`);
-                    marqueursVentParcours.push(m);
-                    return; 
+                    marqueursVentParcours.push(m); return; 
                 }
 
                 const hArrivee = tempsDepart + ((pt.km - distanceCyclisteActuelle) / vitMoy) * 3600;
@@ -442,40 +450,25 @@
                     const vitKmh = Math.round(prev.wind.speed * 3.6), temp = Math.round(prev.main.temp), ress = Math.round(prev.main.feels_like);
                     const drap = pt.estArrivee ? '🏁 ' : '';
 
-                    // NOUVEAU : CODE COULEUR DU VENT
-                    let couleurVent = '#27ae60'; // Vert par défaut (Calme, < 15km/h)
-                    if (vitKmh >= 30) couleurVent = '#e74c3c'; // Rouge (Fort, > 30km/h)
-                    else if (vitKmh >= 15) couleurVent = '#f39c12'; // Orange (Modéré, 15-30km/h)
+                    let couleurVent = '#27ae60'; 
+                    if (vitKmh >= 30) couleurVent = '#e74c3c'; 
+                    else if (vitKmh >= 15) couleurVent = '#f39c12'; 
 
-                    // NOUVEAU : DETECTION DE LA PLUIE
                     let probaPluie = prev.pop ? Math.round(prev.pop * 100) : 0;
-                    // On affiche le texte de pluie sous la bulle seulement si risque > 10%
                     let textePluie = probaPluie > 10 ? `<span style="color: #3498db; font-weight: bold;">💧 ${probaPluie}%</span><br>` : '';
 
-                    // NOUVEAU : Construction visuelle intelligente de la bulle
                     const html = `
                     <div style="background: rgba(255,255,255,0.95); border-radius: 50%; width: 36px; height: 36px; display: flex; justify-content: center; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.3); border: 3px solid ${couleurVent}; margin: 0 auto; pointer-events: none;">
                         <div style="transform: rotate(${prev.wind.deg}deg); font-size: 22px; font-weight: bold; color: ${couleurVent};">⬇</div>
                     </div>
                     <div style="background: white; border-radius: 4px; font-size: 11px; font-weight: bold; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.3); margin-top: 4px; width: 68px; margin-left: -16px; padding: 3px 0; border: 1px solid ${couleurVent}; pointer-events: none; line-height: 1.3;">
-                        ${drap}${vitKmh} km/h<br>
-                        ${textePluie}
-                        <span style="color: #7f8c8d; font-size: 10px;">🕒 ${hTexte}</span>
+                        ${drap}${vitKmh} km/h<br>${textePluie}<span style="color: #7f8c8d; font-size: 10px;">🕒 ${hTexte}</span>
                     </div>`;
                     
                     const marqueur = L.marker([pt.lat, pt.lon], {icon: L.divIcon({ html: html, className: 'custom-vent-icon', iconSize: [36, 68], iconAnchor: [18, 30] })}).addTo(map);
-                    
-                    // Ajout du détail de la pluie dans la popup au clic
                     let detailPluie = probaPluie > 0 ? `<div style="color: #3498db; margin-top: 4px;"><b>💧 Pluie : ${probaPluie}% de risque</b></div>` : '';
-
-                    marqueur.bindPopup(`<div style="text-align: center; font-family: sans-serif; font-size: 13px; line-height: 1.4;">
-                        <div style="font-weight: bold; color: #2980b9; font-size: 16px; margin-bottom: 2px;">🌡️ ${temp}°C</div>
-                        <div style="color: #2c3e50;">Ressenti : <b>${ress}°C</b></div>
-                        ${detailPluie}
-                        <div style="text-transform: capitalize; color: #7f8c8d; margin-top: 5px;">${prev.weather[0].description}</div>
-                    </div>`);
+                    marqueur.bindPopup(`<div style="text-align: center; font-family: sans-serif; font-size: 13px; line-height: 1.4;"><div style="font-weight: bold; color: #2980b9; font-size: 16px; margin-bottom: 2px;">🌡️ ${temp}°C</div><div style="color: #2c3e50;">Ressenti : <b>${ress}°C</b></div>${detailPluie}<div style="text-transform: capitalize; color: #7f8c8d; margin-top: 5px;">${prev.weather[0].description}</div></div>`);
                     marqueur.on('click', function(e) { this.openPopup(); });
-                    
                     marqueursVentParcours.push(marqueur); 
                 });
             });
@@ -513,7 +506,6 @@
                 navigator.geolocation.getCurrentPosition((pos) => {
                     const lat = pos.coords.latitude, lon = pos.coords.longitude;
                     map.setView([lat, lon], 13);
-                    
                     fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${cleAPI}&units=metric&lang=fr`)
                     .then(r => r.json()).then(data => {
                         document.getElementById('ville').innerText = data.name;
