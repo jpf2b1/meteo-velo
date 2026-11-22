@@ -6,7 +6,7 @@
     <title>Météo & Traceur Vélo</title>
     
     <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#2980b9">
+    <meta name="theme-color" id="meta-theme-color" content="#2980b9">
     <link rel="apple-touch-icon" href="icon-192.png">
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -15,61 +15,133 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 
     <style>
+        /* ==========================================================================
+           VARIABLES DE THÈMES (JOUR / NUITSOMRES SPORTIF)
+           ========================================================================== */
+        :root {
+            /* Mode Jour par défaut */
+            --bg-body: #ffffff;
+            --bg-panel: #ffffff;
+            --bg-header: #f1f2f6;
+            --border-panel: #2980b9;
+            --text-primary: #2c3e50;
+            --text-secondary: #7f8c8d;
+            --btn-bg: rgba(41, 128, 185, 0.9);
+            --btn-text: #ffffff;
+            --btn-active: #2471a3;
+            --shadow: rgba(0, 0, 0, 0.2);
+            --widget-bg: rgba(255, 255, 255, 0.85);
+            --widget-border: rgba(255, 255, 255, 0.5);
+            --box-vent: rgba(255, 255, 255, 0.6);
+            --map-filter: none; /* Pas de filtre sur la carte le jour */
+            --text-pente-legende: #7f8c8d;
+        }
+
+        [data-theme="dark"] {
+            /* Mode Nuit / Sombre Sportif */
+            --bg-body: #121212;
+            --bg-panel: #1e1e1e;
+            --bg-header: #2d2d2d;
+            --border-panel: #10ac84; /* Vert électrique plus sportif */
+            --text-primary: #f5f6fa;
+            --text-secondary: #a4b0be;
+            --btn-bg: rgba(30, 30, 30, 0.9);
+            --btn-text: #10ac84; /* Vert électrique pour un style sport de nuit */
+            --btn-active: #0e8f6e;
+            --shadow: rgba(0, 0, 0, 0.5);
+            --widget-bg: rgba(30, 30, 30, 0.9);
+            --widget-border: rgba(255, 255, 255, 0.1);
+            --box-vent: rgba(20, 20, 20, 0.6);
+            /* Assombrit et contraste la carte Leaflet pour le mode nuit */
+            --map-filter: invert(90%) hue-rotate(180deg) brightness(95%) contrast(90%);
+            --text-pente-legende: #a4b0be;
+        }
+
         body, html { 
             margin: 0; padding: 0; height: 100%; width: 100%; 
             font-family: 'Segoe UI', Tahoma, sans-serif; 
             display: flex; flex-direction: column; overflow: hidden; 
+            background-color: var(--bg-body);
+            color: var(--text-primary);
+            transition: background-color 0.3s, color 0.3s;
         }
+        
         #map { flex: 1; width: 100%; z-index: 1; }
+        /* Application du filtre mode nuit sur la carte */
+        .leaflet-container {
+            filter: var(--map-filter);
+            transition: filter 0.3s ease;
+        }
         
         #gpx-panel { 
-            display: none; background: white; border-top: 2px solid #2980b9; 
-            box-shadow: 0 -4px 10px rgba(0,0,0,0.1); padding: 10px; z-index: 1000; 
+            display: none; background: var(--bg-panel); border-top: 2px solid var(--border-panel); 
+            box-shadow: 0 -4px 10px var(--shadow); padding: 10px; z-index: 1000; 
+            transition: background-color 0.3s, border-color 0.3s;
         }
 
         #panel-header {
-            text-align: center; font-size: 14px; font-weight: bold; color: #2c3e50;
-            padding: 8px 0; margin: -10px -10px 10px -10px; background: #f1f2f6;
-            cursor: pointer; border-bottom: 1px solid #dcdde1; 
+            text-align: center; font-size: 14px; font-weight: bold; color: var(--text-primary);
+            padding: 8px 0; margin: -10px -10px 10px -10px; background: var(--bg-header);
+            cursor: pointer; border-bottom: 1px solid var(--shadow); 
             display: flex; justify-content: center; align-items: center; gap: 8px;
+            transition: background-color 0.3s, color 0.3s;
         }
-        #panel-header:active { background: #dfe4ea; }
+        #panel-header:active { background: var(--shadow); }
         
+        /* DESIGN DES BOUTONS FLOTTANTS ET MODERNES */
         .top-controls { 
             position: absolute; top: 15px; left: 50%; transform: translateX(-50%); 
-            z-index: 1000; display: flex; gap: 10px; width: 95%; max-width: 400px; 
+            z-index: 1000; display: flex; gap: 10px; width: 92%; max-width: 420px; 
         }
         .btn-action { 
-            flex: 1; background-color: #2980b9; color: white; border: none; padding: 12px 5px; 
-            border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer; 
-            box-shadow: 0 4px 6px rgba(0,0,0,0.3); text-align: center; 
+            flex: 1; background-color: var(--btn-bg); color: var(--btn-text); border: 1px solid var(--border-panel); padding: 12px 5px; 
+            border-radius: 20px; font-size: 14px; font-weight: bold; cursor: pointer; 
+            box-shadow: 0 4px 12px var(--shadow); text-align: center; 
+            display: flex; justify-content: center; align-items: center; gap: 6px;
+            transition: background-color 0.3s, color 0.3s, border-color 0.3s, transform 0.1s;
+            backdrop-filter: blur(8px);
         }
-        .btn-action:active { background-color: #2471a3; transform: translateY(2px); }
+        .btn-action:active { background-color: var(--btn-active); transform: translateY(2px); }
         
+        /* BOUTON DE CHANGEMENT DE THEME (JOUR/NUIT) */
+        .btn-theme-toggle {
+            position: absolute; top: 75px; right: 15px; z-index: 1000;
+            width: 40px; height: 40px; border-radius: 50%;
+            background-color: var(--btn-bg); color: var(--btn-text);
+            border: 1px solid var(--border-panel); display: flex;
+            justify-content: center; align-items: center; cursor: pointer;
+            box-shadow: 0 4px 12px var(--shadow); font-size: 18px;
+            backdrop-filter: blur(8px); transition: all 0.3s ease;
+        }
+        .btn-theme-toggle:active { transform: scale(0.9); }
+
         .stats-gpx { 
             display: flex; justify-content: space-around; align-items: center; flex-wrap: wrap; 
-            font-weight: bold; color: #2c3e50; margin-bottom: 8px; font-size: 13px; gap: 5px; 
+            font-weight: bold; color: var(--text-primary); margin-bottom: 8px; font-size: 13px; gap: 5px; 
         }
         .planification-box { 
             width: 100%; text-align: center; margin-bottom: 10px; font-size: 14px; font-weight: bold; 
-            color: #2c3e50; display: flex; justify-content: center; align-items: center; gap: 8px; 
+            color: var(--text-primary); display: flex; justify-content: center; align-items: center; gap: 8px; 
         }
         .input-vitesse, .input-date { 
-            text-align: center; border: 1px solid #bdc3c7; border-radius: 6px; padding: 6px; 
-            font-weight: bold; color: #2980b9; font-family: inherit; 
+            text-align: center; border: 1px solid var(--text-secondary); border-radius: 6px; padding: 6px; 
+            font-weight: bold; color: var(--border-panel); font-family: inherit; background-color: var(--bg-panel);
+            transition: color 0.3s, background-color 0.3s;
         }
         .input-vitesse { width: 50px; }
-        .input-date { font-size: 16px; max-width: 200px; background-color: #f8f9fa; }
+        .input-date { font-size: 16px; max-width: 200px; }
         
         .chart-container { position: relative; height: 165px; width: 100%; margin-top: 5px; cursor: crosshair; }
-        .legende-pente { text-align: center; font-size: 11px; margin-top: 8px; font-weight: bold; color: #7f8c8d; }
+        .legende-pente { text-align: center; font-size: 11px; margin-top: 8px; font-weight: bold; color: var(--text-pente-legende); }
         
         .btn-reset, .btn-toggle { 
-            padding: 4px 8px; font-size: 12px; border-radius: 4px; background: white; 
-            cursor: pointer; font-weight: bold; 
+            padding: 4px 8px; font-size: 12px; border-radius: 4px; background: var(--bg-panel); 
+            cursor: pointer; font-weight: bold; border: 1px solid var(--border-panel); color: var(--border-panel);
+            transition: all 0.3s;
         }
-        .btn-reset { display: none; border: 1px solid #2980b9; color: #2980b9; }
-        .btn-toggle { border: 1px solid #27ae60; color: #27ae60; }
+        .btn-reset { display: none; }
+        .btn-toggle { border-color: #27ae60; color: #27ae60; }
+        [data-theme="dark"] .btn-toggle { border-color: #10ac84; color: #10ac84; }
         
         #liste-montees {
             display: none; max-height: 140px; overflow-y: auto; 
@@ -77,29 +149,30 @@
         }
         .montee-item {
             display: flex; justify-content: space-between; align-items: center;
-            background: #f8f9fa; border-left: 5px solid #2980b9; margin-bottom: 5px;
+            background: var(--bg-header); border-left: 5px solid var(--border-panel); margin-bottom: 5px;
             padding: 8px; border-radius: 4px; cursor: pointer; font-size: 12px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            box-shadow: 0 1px 3px var(--shadow); color: var(--text-primary);
         }
-        .montee-item:active { background: #e9ecef; transform: scale(0.98); }
-        .montee-data { font-weight: bold; color: #2c3e50; }
+        .montee-item:active { background: var(--shadow); transform: scale(0.98); }
+        .montee-data { font-weight: bold; color: var(--text-primary); }
         .montee-pente { background: #e74c3c; color: white; padding: 2px 6px; border-radius: 10px; font-weight: bold; } 
         .pente-moyenne { background: #f39c12; } 
         .pente-douce { background: #27ae60; }   
 
         .meteo-carte { 
-            position: absolute; top: 75px; left: 50%; transform: translateX(-50%); z-index: 1000; 
-            background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(10px); 
-            border-radius: 15px; border: 1px solid rgba(255, 255, 255, 0.5); 
+            position: absolute; top: 125px; left: 50%; transform: translateX(-50%); z-index: 1000; 
+            background: var(--widget-bg); backdrop-filter: blur(10px); 
+            border-radius: 15px; border: 1px solid var(--widget-border); 
             padding: 15px; text-align: center; width: 85%; max-width: 320px; 
-            box-shadow: 0 8px 32px 0 rgba(0,0,0,0.3); color: #333; 
+            box-shadow: 0 8px 32px 0 var(--shadow); color: var(--text-primary); 
+            transition: all 0.3s;
         }
-        .btn-fermer-meteo { position: absolute; top: 8px; right: 10px; font-size: 14px; cursor: pointer; color: #7f8c8d; background: none; border: none; padding: 5px; }
-        .temp { font-size: 42px; font-weight: bold; color: #2980b9; margin: 0; }
-        .ressenti { font-size: 14px; color: #2c3e50; font-weight: 600; margin-bottom: 5px; opacity: 0.8; }
+        .btn-fermer-meteo { position: absolute; top: 8px; right: 10px; font-size: 14px; cursor: pointer; color: var(--text-secondary); background: none; border: none; padding: 5px; }
+        .temp { font-size: 42px; font-weight: bold; color: var(--border-panel); margin: 0; }
+        .ressenti { font-size: 14px; color: var(--text-primary); font-weight: 600; margin-bottom: 5px; opacity: 0.8; }
         .rafales { font-size: 13px; color: #c0392b; font-weight: bold; margin-top: 4px; }
-        .desc { font-size: 16px; text-transform: capitalize; color: #2c3e50; font-weight: 500; margin-bottom: 10px; }
-        .vent-box { background: rgba(255, 255, 255, 0.6); border-radius: 12px; padding: 10px; display: flex; justify-content: space-around; align-items: center; font-size: 14px; color: #2c3e50; font-weight: 600; }
+        .desc { font-size: 16px; text-transform: capitalize; color: var(--text-primary); font-weight: 500; margin-bottom: 10px; }
+        .vent-box { background: var(--box-vent); border-radius: 12px; padding: 10px; display: flex; justify-content: space-around; align-items: center; font-size: 14px; color: var(--text-primary); font-weight: 600; }
         .fleche-vent { display: inline-block; font-size: 20px; transition: transform 0.5s ease; }
         .erreur { color: #d32f2f; font-weight: bold; margin-top: 5px; font-size: 13px;}
         
@@ -107,19 +180,23 @@
         .leaflet-popup-content { margin: 10px !important; }
 
         .km-marker {
-            background-color: white; border: 2px solid #e74c3c; border-radius: 50%;
-            color: #2c3e50; font-size: 9px; font-weight: bold; display: flex;
+            background-color: var(--bg-panel); border: 2px solid #e74c3c; border-radius: 50%;
+            color: var(--text-primary); font-size: 9px; font-weight: bold; display: flex;
             justify-content: center; align-items: center; width: 22px; height: 22px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.3); pointer-events: none; 
+            box-shadow: 0 2px 4px var(--shadow); pointer-events: none; 
+            transition: background-color 0.3s, color 0.3s;
         }
     </style>
 </head>
-<body>
+<body data-theme="light"> <!-- Attribut de thème par défaut -->
 
     <div class="top-controls">
         <label class="btn-action">📂 Charger GPX<input type="file" id="gpx-input" accept=".gpx" style="display:none;"></label>
         <button id="btn-gps" class="btn-action">📍 Ma Position</button>
     </div>
+
+    <!-- BOUTON DE CHANGEMENT DE THÈME -->
+    <button id="theme-toggle" class="btn-theme-toggle" title="Changer de thème">🌙</button>
 
     <div class="meteo-carte" id="meteo-widget" style="display: none;">
         <button class="btn-fermer-meteo" id="fermer-meteo">❌</button>
@@ -179,7 +256,7 @@
         let marqueursVentParcours = [], donneesGPX = [], pointsMeteoParcours = [], latlngsGlobaux = [];
         let marqueursDistance = []; 
         let indexPositionCycliste = null;
-        let distanceCyclisteActuelle = 0; // Gère l'avancement du cycliste sur le parcours
+        let distanceCyclisteActuelle = 0; 
         
         let marqueurPositionPointer = null;
 
@@ -190,6 +267,36 @@
             dateInput.value = now.toISOString().slice(0,16);
         }
         initDateDepart();
+
+        // === GESTION INTELLIGENTE DU CHANGEMENT DE THÈME ===
+        const toggleButton = document.getElementById('theme-toggle');
+        
+        toggleButton.addEventListener('click', function() {
+            const body = document.body;
+            const currentTheme = body.getAttribute('data-theme');
+            
+            if (currentTheme === 'dark') {
+                body.setAttribute('data-theme', 'light');
+                this.innerHTML = '🌙';
+                document.getElementById('meta-theme-color').setAttribute('content', '#2980b9');
+            } else {
+                body.setAttribute('data-theme', 'dark');
+                this.innerHTML = '☀️';
+                document.getElementById('meta-theme-color').setAttribute('content', '#10ac84');
+            }
+            
+            // Recréer le graphique d'altitude pour appliquer les nouvelles couleurs de police de la grille
+            if (donneesGPX.length > 0) {
+                const labelsDistance = donneesGPX.map(p => p.distance.toFixed(1));
+                const dataAltitude = donneesGPX.map((p, idx) => graphiqueAltitude ? graphiqueAltitude.data.datasets[0].data[idx] : 0); // Recupere l'altitude actuelle
+                // Récupération correcte des altitudes
+                const rawDistances = donneesGPX.map(p => p.distance);
+                
+                // Petit hack pour extraire l'historique d'altitude du graphique actuel avant de le détruire
+                const altTemp = graphiqueAltitude.data.datasets[0].data;
+                genererGraphique(labelsDistance, altTemp, rawDistances);
+            }
+        });
 
         function calculerDistance(lat1, lon1, lat2, lon2) {
             const R = 6371, dLat = (lat2 - lat1) * Math.PI / 180, dLon = (lon2 - lon1) * Math.PI / 180;
@@ -208,8 +315,6 @@
             }
             if (distMin > 2) return;
             
-            // Un simple clic sur la carte simule l'avancement pour visualiser la position
-            // (Ne modifie pas distanceCyclisteActuelle pour ne pas perturber la météo)
             mettreAJourPointeur(indexPlusProche, false);
             
             const content = document.getElementById('panel-content');
@@ -224,8 +329,13 @@
             indexPositionCycliste = index;
             if (graphiqueAltitude) graphiqueAltitude.update();
             if (marqueurPositionPointer) map.removeLayer(marqueurPositionPointer);
+            
+            // Adapte la couleur du pointeur interactif selon le thème actif
+            const isDark = document.body.getAttribute('data-theme') === 'dark';
+            const couleurPointeur = isDark ? '#10ac84' : '#e74c3c';
+
             marqueurPositionPointer = L.circleMarker([donneesGPX[index].lat, donneesGPX[index].lon], {
-                radius: 6, fillColor: "#e74c3c", color: "#ffffff", weight: 2, fillOpacity: 1, zIndexOffset: 1000
+                radius: 7, fillColor: couleurPointeur, color: "#ffffff", weight: 2.5, fillOpacity: 1, zIndexOffset: 1000
             }).addTo(map);
 
             if (recentrerCarte) map.panTo([donneesGPX[index].lat, donneesGPX[index].lon]);
@@ -262,10 +372,15 @@
 
             const conteneur = document.getElementById('liste-montees'); conteneur.innerHTML = ""; 
             if (ascensionsDetectees.length === 0) {
-                conteneur.innerHTML = "<div style='text-align:center; padding:10px; color:#7f8c8d;'>Aucune difficulté majeure détectée.</div>"; return;
+                conteneur.innerHTML = "<div style='text-align:center; padding:10px; color:var(--text-secondary);'>Aucune difficulté majeure détectée.</div>"; return;
             }
             const entete = document.createElement('div');
-            entete.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; border-bottom:1px solid #ccc; padding-bottom:5px;"><strong style="color:#2980b9;">⛰️ Profil des ascensions</strong><button id="btn-fermer-montees" style="background:none; border:none; font-size:16px; cursor:pointer;">❌</button></div>`;
+            
+            // Adaptation de la couleur de titre de l'entête
+            const isDark = document.body.getAttribute('data-theme') === 'dark';
+            const coulTitre = isDark ? '#10ac84' : '#2980b9';
+
+            entete.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; border-bottom:1px solid var(--shadow); padding-bottom:5px;"><strong style="color:${coulTitre};">⛰️ Profil des ascensions</strong><button id="btn-fermer-montees" style="background:none; border:none; font-size:16px; cursor:pointer; color:var(--text-primary);">❌</button></div>`;
             conteneur.appendChild(entete);
 
             entete.querySelector('#btn-fermer-montees').addEventListener('click', function() {
@@ -277,7 +392,7 @@
                 let classePente = "montee-pente"; 
                 if (montee.pente < 4) classePente += " pente-douce"; else if (montee.pente < 7) classePente += " pente-moyenne"; 
                 const div = document.createElement('div'); div.className = 'montee-item';
-                div.innerHTML = `<div>Montée ${index + 1} <span style="color:#7f8c8d; font-size:10px;">(Km ${montee.kmDebut.toFixed(1)})</span></div><div class="montee-data">${montee.distance.toFixed(1)} km</div><div class="montee-data">+ ${Math.round(montee.denivele)} m</div><div class="${classePente}">${montee.pente.toFixed(1)} %</div>`;
+                div.innerHTML = `<div>Montée ${index + 1} <span style="color:var(--text-secondary); font-size:10px;">(Km ${montee.kmDebut.toFixed(1)})</span></div><div class="montee-data">${montee.distance.toFixed(1)} km</div><div class="montee-data">+ ${Math.round(montee.denivele)} m</div><div class="${classePente}">${montee.pente.toFixed(1)} %</div>`;
                 div.onclick = function() {
                     const portion = latlngsGlobaux.slice(montee.idxDebut, montee.idxFin + 1);
                     map.fitBounds(L.polyline(portion).getBounds(), {padding: [30, 30]});
@@ -299,7 +414,6 @@
                 let distanceTotale = 0, denivelePositif = 0, derniereLat = null, derniereLon = null, derniereEle = null;
                 pointsMeteoParcours = []; donneesGPX = [];
                 
-                // === REINITIALISATION LORS D'UN NOUVEAU PARCOURS ===
                 indexPositionCycliste = null;
                 distanceCyclisteActuelle = 0; 
                 if (marqueurPositionPointer) map.removeLayer(marqueurPositionPointer);
@@ -337,7 +451,12 @@
                     }
 
                     if (traceGPXLayer) map.removeLayer(traceGPXLayer);
-                    traceGPXLayer = L.polyline(latlngs, {color: 'red', weight: 4}).addTo(map);
+                    
+                    // Modifie l'opacité ou la couleur de la trace si nuit pour le contraste
+                    const isDark = document.body.getAttribute('data-theme') === 'dark';
+                    const routeColor = isDark ? '#ff4757' : 'red'; // Rouge plus électrique la nuit
+                    
+                    traceGPXLayer = L.polyline(latlngs, {color: routeColor, weight: 4}).addTo(map);
                     map.fitBounds(traceGPXLayer.getBounds());
 
                     marqueursDistance.forEach(m => map.removeLayer(m));
@@ -420,7 +539,6 @@
             const tempsDepart = Math.floor(new Date(document.getElementById('date-depart').value).getTime() / 1000);
 
             points.forEach(pt => {
-                // VERIFICATION : Si le point météo est derrière nous, on le grise
                 if (pt.km < distanceCyclisteActuelle - 0.5) {
                     const htmlPasse = `<div style="background: #bdc3c7; border-radius: 50%; width: 24px; height: 24px; display: flex; justify-content: center; align-items: center; border: 2px solid #95a5a6; margin: 0 auto; opacity: 0.8;"><span style="font-size: 12px;">✅</span></div><div style="background: rgba(255,255,255,0.8); border-radius: 4px; font-size: 9px; font-weight: bold; text-align: center; margin-top: 2px; width: 40px; margin-left: -8px; color: #7f8c8d;">Km ${pt.km}</div>`;
                     const m = L.marker([pt.lat, pt.lon], {icon: L.divIcon({ html: htmlPasse, className: 'custom-vent-icon', iconSize: [24, 40], iconAnchor: [12, 20] })}).addTo(map);
@@ -445,24 +563,34 @@
                     const vitKmh = Math.round(prev.wind.speed * 3.6), temp = Math.round(prev.main.temp), ress = Math.round(prev.main.feels_like);
                     const drap = pt.estArrivee ? '🏁 ' : '';
 
-                    let couleurVent = '#27ae60'; 
-                    if (vitKmh >= 30) couleurVent = '#e74c3c'; 
-                    else if (vitKmh >= 15) couleurVent = '#f39c12'; 
+                    // NUIT SPORTIVE / JOUR : Adaptation des couleurs du vent selon le thème
+                    const isDark = document.body.getAttribute('data-theme') === 'dark';
+                    let couleurVent = isDark ? '#10ac84' : '#27ae60'; // Vert (Calme)
+                    
+                    if (vitKmh >= 30) {
+                        couleurVent = isDark ? '#ff4757' : '#e74c3c'; // Rouge (Fort)
+                    } else if (vitKmh >= 15) {
+                        couleurVent = isDark ? '#ffa502' : '#f39c12'; // Orange (Modéré)
+                    }
+
+                    const couleurBordureMeteo = pt.estArrivee ? '#27ae60' : isDark ? '#10ac84' : '#2980b9';
 
                     let probaPluie = prev.pop ? Math.round(prev.pop * 100) : 0;
                     let textePluie = probaPluie > 10 ? `<span style="color: #3498db; font-weight: bold;">💧 ${probaPluie}%</span><br>` : '';
 
+                    const isDarkStyling = isDark ? 'background: #1e1e1e; color: #f5f6fa; border: 1px solid #10ac84;' : 'background: white; color: #2c3e50; border: 1px solid ' + couleurBordureMeteo;
+
                     const html = `
-                    <div style="background: rgba(255,255,255,0.95); border-radius: 50%; width: 36px; height: 36px; display: flex; justify-content: center; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.3); border: 3px solid ${couleurVent}; margin: 0 auto; pointer-events: none;">
+                    <div style="background: ${isDark ? 'rgba(30,30,30,0.95)' : 'rgba(255,255,255,0.95)'}; border-radius: 50%; width: 36px; height: 36px; display: flex; justify-content: center; align-items: center; box-shadow: 0 2px 5px var(--shadow); border: 3px solid ${couleurVent}; margin: 0 auto; pointer-events: none;">
                         <div style="transform: rotate(${prev.wind.deg}deg); font-size: 22px; font-weight: bold; color: ${couleurVent};">⬇</div>
                     </div>
-                    <div style="background: white; border-radius: 4px; font-size: 11px; font-weight: bold; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.3); margin-top: 4px; width: 68px; margin-left: -16px; padding: 3px 0; border: 1px solid ${couleurVent}; pointer-events: none; line-height: 1.3;">
-                        ${drap}${vitKmh} km/h<br>${textePluie}<span style="color: #7f8c8d; font-size: 10px;">🕒 ${hTexte}</span>
+                    <div style="${isDarkStyling} border-radius: 4px; font-size: 11px; font-weight: bold; text-align: center; box-shadow: 0 1px 3px var(--shadow); margin-top: 4px; width: 68px; margin-left: -16px; padding: 3px 0; pointer-events: none; line-height: 1.3;">
+                        ${drap}${vitKmh} km/h<br>${textePluie}<span style="color: var(--text-secondary); font-size: 9px;">🕒 ${hTexte}</span>
                     </div>`;
                     
                     const marqueur = L.marker([pt.lat, pt.lon], {icon: L.divIcon({ html: html, className: 'custom-vent-icon', iconSize: [36, 68], iconAnchor: [18, 30] })}).addTo(map);
                     let detailPluie = probaPluie > 0 ? `<div style="color: #3498db; margin-top: 4px;"><b>💧 Pluie : ${probaPluie}% de risque</b></div>` : '';
-                    marqueur.bindPopup(`<div style="text-align: center; font-family: sans-serif; font-size: 13px; line-height: 1.4;"><div style="font-weight: bold; color: #2980b9; font-size: 16px; margin-bottom: 2px;">🌡️ ${temp}°C</div><div style="color: #2c3e50;">Ressenti : <b>${ress}°C</b></div>${detailPluie}<div style="text-transform: capitalize; color: #7f8c8d; margin-top: 5px;">${prev.weather[0].description}</div></div>`);
+                    marqueur.bindPopup(`<div style="text-align: center; font-family: sans-serif; font-size: 13px; line-height: 1.4;"><div style="font-weight: bold; color: var(--border-panel); font-size: 16px; margin-bottom: 2px;">🌡️ ${temp}°C</div><div style="color: var(--text-primary);">Ressenti : <b>${ress}°C</b></div>${detailPluie}<div style="text-transform: capitalize; color: var(--text-secondary); margin-top: 5px;">${prev.weather[0].description}</div></div>`);
                     marqueur.on('click', function(e) { this.openPopup(); });
                     marqueursVentParcours.push(marqueur); 
                 });
@@ -474,16 +602,27 @@
             afterDraw: (chart) => {
                 if (indexPositionCycliste !== null && indexPositionCycliste >= 0) {
                     const ctx = chart.ctx, point = chart.getDatasetMeta(0).data[indexPositionCycliste];
-                    if(point) { ctx.save(); ctx.beginPath(); ctx.arc(point.x, point.y, 6, 0, 2 * Math.PI); ctx.fillStyle = '#e74c3c'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = '#ffffff'; ctx.stroke(); ctx.restore(); }
+                    if(point) { 
+                        const isDark = document.body.getAttribute('data-theme') === 'dark';
+                        ctx.save(); ctx.beginPath(); ctx.arc(point.x, point.y, 6.5, 0, 2 * Math.PI); 
+                        ctx.fillStyle = isDark ? '#10ac84' : '#e74c3c'; 
+                        ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = '#ffffff'; ctx.stroke(); ctx.restore(); 
+                    }
                 }
             }
         };
 
         function genererGraphique(labels, data, rawDistances) {
             if (graphiqueAltitude) graphiqueAltitude.destroy(); 
+            
+            // Adapter la couleur de texte de la grille selon le thème
+            const isDark = document.body.getAttribute('data-theme') === 'dark';
+            const colorGrilleText = isDark ? '#a4b0be' : '#7f8c8d';
+            const colorLigneGrille = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
+
             graphiqueAltitude = new Chart(document.getElementById('elevationChart').getContext('2d'), {
                 type: 'line',
-                data: { labels: labels, datasets: [{ label: 'Altitude', data: data, borderWidth: 3, backgroundColor: 'rgba(189, 195, 199, 0.2)', fill: true, pointRadius: 0, tension: 0.1, segment: { borderColor: ctx => {
+                data: { labels: labels, datasets: [{ label: 'Altitude', data: data, borderWidth: 3, backgroundColor: isDark ? 'rgba(16, 172, 132, 0.1)' : 'rgba(189, 195, 199, 0.2)', fill: true, pointRadius: 0, tension: 0.1, segment: { borderColor: ctx => {
                     if (!rawDistances) return '#27ae60'; 
                     const i = ctx.p0DataIndex, dist = (rawDistances[i + 1] - rawDistances[i]) * 1000;
                     if (dist <= 0.1) return '#27ae60';
@@ -496,13 +635,22 @@
                         if (activeElements.length > 0) { mettreAJourPointeur(activeElements[0].index, true); }
                     },
                     plugins: { legend: { display: false }, zoom: { pan: { enabled: true, mode: 'x', onPan: () => document.getElementById('btn-reset-zoom').style.display = 'inline-block' }, zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x', onZoom: () => document.getElementById('btn-reset-zoom').style.display = 'inline-block' } } }, 
-                    scales: { x: { ticks: { maxTicksLimit: 8 } }, y: { title: { display: true, text: 'Mètres' } } } 
+                    scales: { 
+                        x: { 
+                            ticks: { maxTicksLimit: 8, color: colorGrilleText },
+                            grid: { color: colorLigneGrille }
+                        }, 
+                        y: { 
+                            title: { display: true, text: 'Mètres', color: colorGrilleText },
+                            ticks: { color: colorGrilleText },
+                            grid: { color: colorLigneGrille }
+                        } 
+                    } 
                 },
                 plugins: [pluginCycliste]
             });
         }
 
-        // === LE NOUVEAU BOUTON GPS INTELLIGENT ===
         document.getElementById('btn-gps').addEventListener('click', function() {
             this.innerText = "⏳..."; 
             if (navigator.geolocation) {
@@ -510,7 +658,6 @@
                     const lat = pos.coords.latitude, lon = pos.coords.longitude;
                     map.setView([lat, lon], 13);
                     
-                    // NOUVEAUTÉ : Analyse de l'avancement sur le GPX
                     if (donneesGPX.length > 0) {
                         let indexPlusProche = 0;
                         let distMin = Infinity;
@@ -520,13 +667,9 @@
                             if (d < distMin) { distMin = d; indexPlusProche = i; }
                         }
                         
-                        // Si le cycliste est à moins de 2 km de son tracé
                         if (distMin < 2) {
-                            // On enregistre sa vraie distance parcourue
                             distanceCyclisteActuelle = donneesGPX[indexPlusProche].distance;
-                            // On met à jour le point rouge
                             mettreAJourPointeur(indexPlusProche, false);
-                            // On actualise la météo (ce qui va griser les points passés)
                             ajouterVentSurParcours(pointsMeteoParcours);
                         }
                     }
