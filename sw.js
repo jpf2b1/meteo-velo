@@ -1,16 +1,20 @@
-const CACHE_NAME = 'meteo-velo-v1';
+const CACHE_NAME = 'meteo-velo-v2';
 
 self.addEventListener('install', (event) => {
+    self.skipWaiting();
     event.waitUntil(caches.open(CACHE_NAME).then((cache) => {
-        // Met en cache les fichiers de base pour le mode hors-ligne
-        return cache.addAll(['./', './index.html']); 
+        return cache.addAll(['./', './index.html']);
     }));
 });
 
+self.addEventListener('activate', (event) => {
+    event.waitUntil(clients.claim());
+});
+
 self.addEventListener('fetch', (event) => {
-    // LE FAMEUX CORRECTIF : On laisse passer toutes les requêtes POST vers internet
-    if (event.request.method !== 'GET') {
-        return; 
+    // On laisse passer toutes les requêtes non-GET et toutes les API externes sans interception
+    if (event.request.method !== 'GET' || !event.request.url.startsWith(self.location.origin)) {
+        return;
     }
 
     event.respondWith(
