@@ -16,7 +16,7 @@
 
     <style>
         /* ==========================================================================
-           VARIABLES DE THÈMES (JOUR / NUITSOMRES SPORTIF)
+           VARIABLES DE THÈMES (JOUR / NUIT SOMBRE SPORTIF)
            ========================================================================== */
         :root {
             /* Mode Jour par défaut */
@@ -33,7 +33,7 @@
             --widget-bg: rgba(255, 255, 255, 0.85);
             --widget-border: rgba(255, 255, 255, 0.5);
             --box-vent: rgba(255, 255, 255, 0.6);
-            --map-filter: none; /* Pas de filtre sur la carte le jour */
+            --map-filter: none;
             --text-pente-legende: #7f8c8d;
         }
 
@@ -46,13 +46,12 @@
             --text-primary: #f5f6fa;
             --text-secondary: #a4b0be;
             --btn-bg: rgba(30, 30, 30, 0.9);
-            --btn-text: #10ac84; /* Vert électrique pour un style sport de nuit */
+            --btn-text: #10ac84; 
             --btn-active: #0e8f6e;
             --shadow: rgba(0, 0, 0, 0.5);
             --widget-bg: rgba(30, 30, 30, 0.9);
             --widget-border: rgba(255, 255, 255, 0.1);
             --box-vent: rgba(20, 20, 20, 0.6);
-            /* Assombrit et contraste la carte Leaflet pour le mode nuit */
             --map-filter: invert(90%) hue-rotate(180deg) brightness(95%) contrast(90%);
             --text-pente-legende: #a4b0be;
         }
@@ -67,7 +66,6 @@
         }
         
         #map { flex: 1; width: 100%; z-index: 1; }
-        /* Application du filtre mode nuit sur la carte */
         .leaflet-container {
             filter: var(--map-filter);
             transition: filter 0.3s ease;
@@ -88,7 +86,6 @@
         }
         #panel-header:active { background: var(--shadow); }
         
-        /* DESIGN DES BOUTONS FLOTTANTS ET MODERNES */
         .top-controls { 
             position: absolute; top: 15px; left: 50%; transform: translateX(-50%); 
             z-index: 1000; display: flex; gap: 10px; width: 92%; max-width: 420px; 
@@ -103,7 +100,6 @@
         }
         .btn-action:active { background-color: var(--btn-active); transform: translateY(2px); }
         
-        /* BOUTON DE CHANGEMENT DE THEME (JOUR/NUIT) */
         .btn-theme-toggle {
             position: absolute; top: 75px; right: 15px; z-index: 1000;
             width: 40px; height: 40px; border-radius: 50%;
@@ -188,14 +184,13 @@
         }
     </style>
 </head>
-<body data-theme="light"> <!-- Attribut de thème par défaut -->
+<body data-theme="light"> 
 
     <div class="top-controls">
         <label class="btn-action">📂 Charger GPX<input type="file" id="gpx-input" accept=".gpx" style="display:none;"></label>
         <button id="btn-gps" class="btn-action">📍 Ma Position</button>
     </div>
 
-    <!-- BOUTON DE CHANGEMENT DE THÈME -->
     <button id="theme-toggle" class="btn-theme-toggle" title="Changer de thème">🌙</button>
 
     <div class="meteo-carte" id="meteo-widget" style="display: none;">
@@ -257,7 +252,6 @@
         let marqueursDistance = []; 
         let indexPositionCycliste = null;
         let distanceCyclisteActuelle = 0; 
-        
         let marqueurPositionPointer = null;
 
         function initDateDepart() {
@@ -268,9 +262,7 @@
         }
         initDateDepart();
 
-        // === GESTION INTELLIGENTE DU CHANGEMENT DE THÈME ===
         const toggleButton = document.getElementById('theme-toggle');
-        
         toggleButton.addEventListener('click', function() {
             const body = document.body;
             const currentTheme = body.getAttribute('data-theme');
@@ -285,15 +277,10 @@
                 document.getElementById('meta-theme-color').setAttribute('content', '#10ac84');
             }
             
-            // Recréer le graphique d'altitude pour appliquer les nouvelles couleurs de police de la grille
             if (donneesGPX.length > 0) {
                 const labelsDistance = donneesGPX.map(p => p.distance.toFixed(1));
-                const dataAltitude = donneesGPX.map((p, idx) => graphiqueAltitude ? graphiqueAltitude.data.datasets[0].data[idx] : 0); // Recupere l'altitude actuelle
-                // Récupération correcte des altitudes
-                const rawDistances = donneesGPX.map(p => p.distance);
-                
-                // Petit hack pour extraire l'historique d'altitude du graphique actuel avant de le détruire
                 const altTemp = graphiqueAltitude.data.datasets[0].data;
+                const rawDistances = donneesGPX.map(p => p.distance);
                 genererGraphique(labelsDistance, altTemp, rawDistances);
             }
         });
@@ -330,7 +317,6 @@
             if (graphiqueAltitude) graphiqueAltitude.update();
             if (marqueurPositionPointer) map.removeLayer(marqueurPositionPointer);
             
-            // Adapte la couleur du pointeur interactif selon le thème actif
             const isDark = document.body.getAttribute('data-theme') === 'dark';
             const couleurPointeur = isDark ? '#10ac84' : '#e74c3c';
 
@@ -376,7 +362,6 @@
             }
             const entete = document.createElement('div');
             
-            // Adaptation de la couleur de titre de l'entête
             const isDark = document.body.getAttribute('data-theme') === 'dark';
             const coulTitre = isDark ? '#10ac84' : '#2980b9';
 
@@ -452,9 +437,8 @@
 
                     if (traceGPXLayer) map.removeLayer(traceGPXLayer);
                     
-                    // Modifie l'opacité ou la couleur de la trace si nuit pour le contraste
                     const isDark = document.body.getAttribute('data-theme') === 'dark';
-                    const routeColor = isDark ? '#ff4757' : 'red'; // Rouge plus électrique la nuit
+                    const routeColor = isDark ? '#ff4757' : 'red'; 
                     
                     traceGPXLayer = L.polyline(latlngs, {color: routeColor, weight: 4}).addTo(map);
                     map.fitBounds(traceGPXLayer.getBounds());
@@ -563,14 +547,13 @@
                     const vitKmh = Math.round(prev.wind.speed * 3.6), temp = Math.round(prev.main.temp), ress = Math.round(prev.main.feels_like);
                     const drap = pt.estArrivee ? '🏁 ' : '';
 
-                    // NUIT SPORTIVE / JOUR : Adaptation des couleurs du vent selon le thème
                     const isDark = document.body.getAttribute('data-theme') === 'dark';
-                    let couleurVent = isDark ? '#10ac84' : '#27ae60'; // Vert (Calme)
+                    let couleurVent = isDark ? '#10ac84' : '#27ae60'; 
                     
                     if (vitKmh >= 30) {
-                        couleurVent = isDark ? '#ff4757' : '#e74c3c'; // Rouge (Fort)
+                        couleurVent = isDark ? '#ff4757' : '#e74c3c'; 
                     } else if (vitKmh >= 15) {
-                        couleurVent = isDark ? '#ffa502' : '#f39c12'; // Orange (Modéré)
+                        couleurVent = isDark ? '#ffa502' : '#f39c12'; 
                     }
 
                     const couleurBordureMeteo = pt.estArrivee ? '#27ae60' : isDark ? '#10ac84' : '#2980b9';
@@ -615,26 +598,47 @@
         function genererGraphique(labels, data, rawDistances) {
             if (graphiqueAltitude) graphiqueAltitude.destroy(); 
             
-            // Adapter la couleur de texte de la grille selon le thème
             const isDark = document.body.getAttribute('data-theme') === 'dark';
             const colorGrilleText = isDark ? '#a4b0be' : '#7f8c8d';
             const colorLigneGrille = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
 
             graphiqueAltitude = new Chart(document.getElementById('elevationChart').getContext('2d'), {
                 type: 'line',
-                data: { labels: labels, datasets: [{ label: 'Altitude', data: data, borderWidth: 3, backgroundColor: isDark ? 'rgba(16, 172, 132, 0.1)' : 'rgba(189, 195, 199, 0.2)', fill: true, pointRadius: 0, tension: 0.1, segment: { borderColor: ctx => {
-                    if (!rawDistances) return '#27ae60'; 
-                    const i = ctx.p0DataIndex, dist = (rawDistances[i + 1] - rawDistances[i]) * 1000;
-                    if (dist <= 0.1) return '#27ae60';
-                    const pente = ((data[i + 1] - data[i]) / dist) * 100;
-                    return (pente < -1) ? '#3498db' : (pente < 3) ? '#27ae60' : (pente < 7) ? '#f39c12' : '#e74c3c';                 
-                }}}]} ,
+                data: { 
+                    labels: labels, 
+                    datasets: [{ 
+                        label: 'Altitude', 
+                        data: data, 
+                        borderWidth: 3, 
+                        borderColor: '#27ae60',
+                        backgroundColor: isDark ? 'rgba(16, 172, 132, 0.1)' : 'rgba(189, 195, 199, 0.2)', 
+                        fill: true, 
+                        pointRadius: 0, 
+                        tension: 0.1, 
+                        segment: { 
+                            borderColor: ctx => {
+                                if (!rawDistances || ctx.p0DataIndex >= rawDistances.length - 1) return '#27ae60'; 
+                                const i = ctx.p0DataIndex;
+                                const dist = (rawDistances[i + 1] - rawDistances[i]) * 1000;
+                                if (dist <= 0.1) return '#27ae60';
+                                const pente = ((data[i + 1] - data[i]) / dist) * 100;
+                                return (pente < -1) ? '#3498db' : (pente < 3) ? '#27ae60' : (pente < 7) ? '#f39c12' : '#e74c3c';                 
+                            }
+                        }
+                    }]
+                },
                 options: { 
                     responsive: true, maintainAspectRatio: false, 
                     onClick: (event, activeElements) => {
                         if (activeElements.length > 0) { mettreAJourPointeur(activeElements[0].index, true); }
                     },
-                    plugins: { legend: { display: false }, zoom: { pan: { enabled: true, mode: 'x', onPan: () => document.getElementById('btn-reset-zoom').style.display = 'inline-block' }, zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x', onZoom: () => document.getElementById('btn-reset-zoom').style.display = 'inline-block' } } }, 
+                    plugins: { 
+                        legend: { display: false }, 
+                        zoom: { 
+                            pan: { enabled: true, mode: 'x', onPan: () => document.getElementById('btn-reset-zoom').style.display = 'inline-block' }, 
+                            zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x', onZoom: () => document.getElementById('btn-reset-zoom').style.display = 'inline-block' } 
+                        } 
+                    }, 
                     scales: { 
                         x: { 
                             ticks: { maxTicksLimit: 8, color: colorGrilleText },
