@@ -435,8 +435,8 @@
                 conteneur.appendChild(div);
             });
 
-            // RECHERCHE RAPIDE VIA L'API PHOTON (KOMOOT)
-            for (const s of sommetsAchercher) {
+            // RECHERCHE PARALLÈLE RAPIDE VIA L'API PHOTON (KOMOOT)
+            const requetesCols = sommetsAchercher.map(async (s) => {
                 let bestName = `Montée ${s.index + 1}`;
                 try {
                     const url = `https://photon.komoot.io/reverse?lat=${s.lat}&lon=${s.lon}&limit=10`;
@@ -473,7 +473,9 @@
                     elHtml.title = bestName;
                     elHtml.style.color = "var(--text-primary)";
                 }
-            }
+            });
+
+            await Promise.all(requetesCols);
         }
 
         document.getElementById('gpx-input').addEventListener('change', function(e) {
@@ -525,8 +527,36 @@
                 }
 
                 if (latlngs.length > 0) {
-                    latlngsGlobaux = latlngs; 
-                    let intervalleMeteo = distanceTotale < 30 ? 5 : distanceTotale < 60 ? 10 : distanceTotale < 100 ? 15 : distanceTotale < 200 ? 20 : 30;
+                    // --- OPTIMISATION ULTRA-DISTANCE (MAX ~1500 POINTS VISUELS) ---
+                    const maxPointsVisuels = 1500;
+                    const pas = Math.max(1, Math.floor(latlngs.length / maxPointsVisuels));
+                    
+                    const latlngsOptimises = [];
+                    const labelsOptimises = [];
+                    const altitudeOptimisee = [];
+                    const distancesOptimisees = [];
+                    const donneesGPXOptimisees = [];
+
+                    for (let i = 0; i < latlngs.length; i += pas) {
+                        latlngsOptimises.push(latlngs[i]);
+                        labelsOptimises.push(labelsDistance[i]);
+                        altitudeOptimisee.push(dataAltitude[i]);
+                        distancesOptimisees.push(rawDistances[i]);
+                        donneesGPXOptimisees.push(donneesGPX[i]);
+                    }
+                    if ((latlngs.length - 1) % pas !== 0) {
+                        const last = latlngs.length - 1;
+                        latlngsOptimises.push(latlngs[last]);
+                        labelsOptimises.push(labelsDistance[last]);
+                        altitudeOptimisee.push(dataAltitude[last]);
+                        distancesOptimisees.push(rawDistances[last]);
+                        donneesGPXOptimisees.push(donneesGPX[last]);
+                    }
+
+                    donneesGPX = donneesGPXOptimisees;
+                    latlngsGlobaux = latlngsOptimises;
+
+                    let intervalleMeteo = distanceTotale < 30 ? 5 : distanceTotale < 60 ? 10 : distanceTotale < 100 ? 15 : distanceTotale < 200 ? 20 : distanceTotale < 400 ? 30 : 50;
 
                     let prochainPalierMeteo = intervalleMeteo;
                     for (let i = 0; i < donneesGPX.length; i++) {
@@ -541,13 +571,13 @@
                     const isDark = document.body.getAttribute('data-theme') === 'dark';
                     const routeColor = isDark ? '#ff4757' : 'red'; 
                     
-                    traceGPXLayer = L.polyline(latlngs, {color: routeColor, weight: 4}).addTo(map);
+                    traceGPXLayer = L.polyline(latlngsOptimises, {color: routeColor, weight: 4}).addTo(map);
                     map.fitBounds(traceGPXLayer.getBounds());
 
                     marqueursDistance.forEach(m => map.removeLayer(m));
                     marqueursDistance = [];
 
-                    let intervalleKm = distanceTotale < 15 ? 1 : distanceTotale < 50 ? 5 : distanceTotale < 100 ? 10 : 20;
+                    let intervalleKm = distanceTotale < 15 ? 1 : distanceTotale < 50 ? 5 : distanceTotale < 100 ? 10 : distanceTotale < 300 ? 20 : 50;
 
                     let prochainKm = intervalleKm;
                     for (let i = 0; i < donneesGPX.length; i++) {
@@ -572,9 +602,9 @@
                     document.getElementById('gpx-panel').style.display = 'block';
                     setTimeout(() => map.invalidateSize(), 300); 
 
-                    genererGraphique(labelsDistance, dataAltitude, rawDistances);
+                    genererGraphique(labelsOptimises, altitudeOptimisee, distancesOptimisees);
                     ajouterVentSurParcours(pointsMeteoParcours);
-                    detecterEtAfficherMontees(dataAltitude, rawDistances, listeWaypoints);
+                    detecterEtAfficherMontees(altitudeOptimisee, distancesOptimisees, listeWaypoints);
                 }
             };
             reader.readAsText(file);
