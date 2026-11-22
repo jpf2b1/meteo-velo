@@ -27,7 +27,6 @@
             box-shadow: 0 -4px 10px rgba(0,0,0,0.1); padding: 10px; z-index: 1000; 
         }
 
-        /* NOUVEAU : En-tête cliquable pour réduire/agrandir le panneau */
         #panel-header {
             text-align: center; font-size: 14px; font-weight: bold; color: #2c3e50;
             padding: 8px 0; margin: -10px -10px 10px -10px; background: #f1f2f6;
@@ -62,7 +61,7 @@
         .input-vitesse { width: 50px; }
         .input-date { font-size: 16px; max-width: 200px; background-color: #f8f9fa; }
         
-        .chart-container { position: relative; height: 165px; width: 100%; margin-top: 5px;}
+        .chart-container { position: relative; height: 165px; width: 100%; margin-top: 5px; cursor: crosshair; }
         .legende-pente { text-align: center; font-size: 11px; margin-top: 8px; font-weight: bold; color: #7f8c8d; }
         
         .btn-reset, .btn-toggle { 
@@ -143,10 +142,7 @@
     <div id="map"></div>
 
     <div id="gpx-panel">
-        <!-- NOUVEAU : Le bouton pour réduire/agrandir le panneau -->
         <div id="panel-header">🔽 Masquer le profil</div>
-        
-        <!-- Conteneur qui sera masqué lors de la réduction -->
         <div id="panel-content">
             <div class="planification-box">
                 🗓️ Départ : <input type="datetime-local" id="date-depart" class="input-date">
@@ -182,7 +178,10 @@
         let traceGPXLayer = null, graphiqueAltitude = null;
         let marqueursVentParcours = [], donneesGPX = [], pointsMeteoParcours = [], latlngsGlobaux = [];
         let marqueursDistance = []; 
-        let indexPositionCycliste = null, distanceCyclisteActuelle = 0; 
+        let indexPositionCycliste = null; 
+        
+        // NOUVEAU : Marqueur rouge sur la carte (synchronisé avec le graphique)
+        let marqueurPositionPointer = null;
 
         function initDateDepart() {
             const dateInput = document.getElementById('date-depart');
@@ -198,27 +197,69 @@
             return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
         }
 
-        function detecterEtAfficherMontees(dataAltitude, rawDistances) {
-            let ascensionsDetectees = [];
-            let indexDebut = -1;
-            let altMaxLocale = -Infinity;
+        // === NOUVEAU : CLIC SUR LA CARTE ➡️ AFFICHE SUR LE GRAPHIQUE ===
+        map.on('click', function(e) {
+            if (donneesGPX.length === 0) return; // Si pas de trace chargée, on ne fait rien
+            
+            let indexPlusProche = 0;
+            let distMin = Infinity;
+            
+            // Cherche le point du tracé GPX le plus proche du clic
+            for (let i = 0; i < donneesGPX.length; i++) {
+                let d = calculerDistance(e.latlng.lat, e.latlng.lng, donneesGPX[i].lat, donneesGPX[i].lon);
+                if (d < distMin) {
+                    distMin = d;
+                    indexPlusProche = i;
+                }
+            }
+            
+            // Si on clique à plus de 2 km de la trace, on ignore l'action
+            if (distMin > 2) return;
+            
+            // Met à jour la position
+            mettreAJourPointeur(indexPlusProche, false);
+            
+            // Ouvre automatiquement le panneau du bas s'il était fermé
+            const content = document.getElementById('panel-content');
+            if (content.style.display === 'none') {
+                content.style.display = 'block';
+                document.getElementById('panel-header').innerHTML = '🔽 Masquer le profil';
+                setTimeout(() => { if(map) map.invalidateSize(); }, 100);
+            }
+        });
 
+        // Fonction centralisée pour mettre à jour le point rouge (Carte + Graphique)
+        function mettreAJourPointeur(index, recentrerCarte = true) {
+            indexPositionCycliste = index;
+            
+            // 1. Mise à jour du graphique d'altitude
+            if (graphiqueAltitude) graphiqueAltitude.update();
+            
+            // 2. Mise à jour de la carte
+            if (marqueurPositionPointer) map.removeLayer(marqueurPositionPointer);
+            marqueurPositionPointer = L.circleMarker([donneesGPX[index].lat, donneesGPX[index].lon], {
+                radius: 6, fillColor: "#e74c3c", color: "#ffffff", weight: 2, fillOpacity: 1, zIndexOffset: 1000
+            }).addTo(map);
+
+            // 3. Option pour recentrer la carte
+            if (recentrerCarte) {
+                map.panTo([donneesGPX[index].lat, donneesGPX[index].lon]);
+            }
+        }
+
+        function detecterEtAfficherMontees(dataAltitude, rawDistances) {
+            let ascensionsDetectees = []; let indexDebut = -1; let altMaxLocale = -Infinity;
             for (let i = 1; i < dataAltitude.length; i++) {
                 let alt = dataAltitude[i];
                 if (indexDebut === -1) {
-                    if (alt > dataAltitude[i-1]) {
-                        indexDebut = i - 1;
-                        altMaxLocale = alt;
-                    }
+                    if (alt > dataAltitude[i-1]) { indexDebut = i - 1; altMaxLocale = alt; }
                 } else {
                     if (alt > altMaxLocale) altMaxLocale = alt;
                     if (altMaxLocale - alt > 15 || i === dataAltitude.length - 1) {
-                        let vraiIndexSommet = indexDebut;
-                        let vraieAltSommet = dataAltitude[indexDebut];
+                        let vraiIndexSommet = indexDebut; let vraieAltSommet = dataAltitude[indexDebut];
                         for(let j = indexDebut; j <= i; j++){
                             if(dataAltitude[j] > vraieAltSommet) { vraieAltSommet = dataAltitude[j]; vraiIndexSommet = j; }
                         }
-                        
                         let denivelePositif = vraieAltSommet - dataAltitude[indexDebut];
                         let distanceMontee = rawDistances[vraiIndexSommet] - rawDistances[indexDebut];
                         
@@ -235,21 +276,12 @@
                 }
             }
 
-            const conteneur = document.getElementById('liste-montees');
-            conteneur.innerHTML = ""; 
-            
+            const conteneur = document.getElementById('liste-montees'); conteneur.innerHTML = ""; 
             if (ascensionsDetectees.length === 0) {
-                conteneur.innerHTML = "<div style='text-align:center; padding:10px; color:#7f8c8d;'>Aucune difficulté majeure détectée.</div>";
-                return;
+                conteneur.innerHTML = "<div style='text-align:center; padding:10px; color:#7f8c8d;'>Aucune difficulté majeure détectée.</div>"; return;
             }
-
             const entete = document.createElement('div');
-            entete.innerHTML = `
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; border-bottom:1px solid #ccc; padding-bottom:5px;">
-                    <strong style="color:#2980b9;">⛰️ Profil des ascensions</strong>
-                    <button id="btn-fermer-montees" style="background:none; border:none; font-size:16px; cursor:pointer;">❌</button>
-                </div>
-            `;
+            entete.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; border-bottom:1px solid #ccc; padding-bottom:5px;"><strong style="color:#2980b9;">⛰️ Profil des ascensions</strong><button id="btn-fermer-montees" style="background:none; border:none; font-size:16px; cursor:pointer;">❌</button></div>`;
             conteneur.appendChild(entete);
 
             entete.querySelector('#btn-fermer-montees').addEventListener('click', function() {
@@ -259,17 +291,9 @@
 
             ascensionsDetectees.forEach((montee, index) => {
                 let classePente = "montee-pente"; 
-                if (montee.pente < 4) classePente += " pente-douce"; 
-                else if (montee.pente < 7) classePente += " pente-moyenne"; 
-
-                const div = document.createElement('div');
-                div.className = 'montee-item';
-                div.innerHTML = `
-                    <div>Montée ${index + 1} <span style="color:#7f8c8d; font-size:10px;">(Km ${montee.kmDebut.toFixed(1)})</span></div>
-                    <div class="montee-data">${montee.distance.toFixed(1)} km</div>
-                    <div class="montee-data">+ ${Math.round(montee.denivele)} m</div>
-                    <div class="${classePente}">${montee.pente.toFixed(1)} %</div>
-                `;
+                if (montee.pente < 4) classePente += " pente-douce"; else if (montee.pente < 7) classePente += " pente-moyenne"; 
+                const div = document.createElement('div'); div.className = 'montee-item';
+                div.innerHTML = `<div>Montée ${index + 1} <span style="color:#7f8c8d; font-size:10px;">(Km ${montee.kmDebut.toFixed(1)})</span></div><div class="montee-data">${montee.distance.toFixed(1)} km</div><div class="montee-data">+ ${Math.round(montee.denivele)} m</div><div class="${classePente}">${montee.pente.toFixed(1)} %</div>`;
                 div.onclick = function() {
                     const portion = latlngsGlobaux.slice(montee.idxDebut, montee.idxFin + 1);
                     map.fitBounds(L.polyline(portion).getBounds(), {padding: [30, 30]});
@@ -290,6 +314,10 @@
                 let latlngs = [], labelsDistance = [], dataAltitude = [], rawDistances = [];
                 let distanceTotale = 0, denivelePositif = 0, derniereLat = null, derniereLon = null, derniereEle = null;
                 pointsMeteoParcours = []; donneesGPX = [];
+                
+                // Réinitialise le pointeur
+                indexPositionCycliste = null;
+                if (marqueurPositionPointer) map.removeLayer(marqueurPositionPointer);
 
                 for (let i = 0; i < trackPoints.length; i++) {
                     const lat = parseFloat(trackPoints[i].getAttribute("lat"));
@@ -313,13 +341,7 @@
 
                 if (latlngs.length > 0) {
                     latlngsGlobaux = latlngs; 
-                    
-                    let intervalleMeteo = 20;
-                    if (distanceTotale < 30) intervalleMeteo = 5;
-                    else if (distanceTotale < 60) intervalleMeteo = 10;
-                    else if (distanceTotale < 100) intervalleMeteo = 15;
-                    else if (distanceTotale < 200) intervalleMeteo = 20;
-                    else intervalleMeteo = 30;
+                    let intervalleMeteo = distanceTotale < 30 ? 5 : distanceTotale < 60 ? 10 : distanceTotale < 100 ? 15 : distanceTotale < 200 ? 20 : 30;
 
                     let prochainPalierMeteo = intervalleMeteo;
                     for (let i = 0; i < donneesGPX.length; i++) {
@@ -336,11 +358,7 @@
                     marqueursDistance.forEach(m => map.removeLayer(m));
                     marqueursDistance = [];
 
-                    let intervalleKm = 10;
-                    if (distanceTotale < 15) intervalleKm = 1;
-                    else if (distanceTotale < 50) intervalleKm = 5;
-                    else if (distanceTotale < 100) intervalleKm = 10;
-                    else intervalleKm = 20;
+                    let intervalleKm = distanceTotale < 15 ? 1 : distanceTotale < 50 ? 5 : distanceTotale < 100 ? 10 : 20;
 
                     let prochainKm = intervalleKm;
                     for (let i = 0; i < donneesGPX.length; i++) {
@@ -357,7 +375,6 @@
                     if (pointsMeteoParcours.length > 0 && (distanceTotale - pointsMeteoParcours[pointsMeteoParcours.length - 1].km < (intervalleMeteo * 0.2))) { pointsMeteoParcours.pop(); }
                     pointsMeteoParcours.push({ lat: derniereLat, lon: derniereLon, km: distanceTotale.toFixed(1), estArrivee: true });
 
-                    // Affiche le panneau et s'assure qu'il n'est pas réduit lors d'un nouveau chargement
                     document.getElementById('panel-content').style.display = 'block';
                     document.getElementById('panel-header').innerHTML = '🔽 Masquer le profil';
                     
@@ -374,17 +391,13 @@
             reader.readAsText(file);
         });
 
-        // === ACTION DU NOUVEAU BOUTON "RÉDUIRE/AGRANDIR LE PROFIL" ===
         document.getElementById('panel-header').addEventListener('click', function() {
             const content = document.getElementById('panel-content');
             if (content.style.display === 'none') {
-                content.style.display = 'block';
-                this.innerHTML = '🔽 Masquer le profil';
+                content.style.display = 'block'; this.innerHTML = '🔽 Masquer le profil';
             } else {
-                content.style.display = 'none';
-                this.innerHTML = '📊 Afficher le profil';
+                content.style.display = 'none'; this.innerHTML = '📊 Afficher le profil';
             }
-            // Oblige la carte à recalculer sa taille pour remplir l'espace gagné
             setTimeout(() => { if(map) map.invalidateSize(); }, 100);
         });
 
@@ -412,29 +425,17 @@
             if (graphiqueAltitude) { graphiqueAltitude.resetZoom(); this.style.display = 'none'; }
         });
 
-        document.getElementById('fermer-meteo').addEventListener('click', function() {
-            document.getElementById('meteo-widget').style.display = 'none';
-        });
-
+        document.getElementById('fermer-meteo').addEventListener('click', function() { document.getElementById('meteo-widget').style.display = 'none'; });
         document.getElementById('vitesse-moyenne').addEventListener('change', () => { if (pointsMeteoParcours.length > 0) ajouterVentSurParcours(pointsMeteoParcours); });
         document.getElementById('date-depart').addEventListener('change', () => { if (pointsMeteoParcours.length > 0) ajouterVentSurParcours(pointsMeteoParcours); });
 
         function ajouterVentSurParcours(points) {
-            marqueursVentParcours.forEach(m => map.removeLayer(m));
-            marqueursVentParcours = [];
+            marqueursVentParcours.forEach(m => map.removeLayer(m)); marqueursVentParcours = [];
             const vitMoy = parseFloat(document.getElementById('vitesse-moyenne').value) || 25;
             const tempsDepart = Math.floor(new Date(document.getElementById('date-depart').value).getTime() / 1000);
 
             points.forEach(pt => {
-                if (pt.km < distanceCyclisteActuelle - 0.5) {
-                    const htmlPasse = `<div style="background: #bdc3c7; border-radius: 50%; width: 24px; height: 24px; display: flex; justify-content: center; align-items: center; border: 2px solid #95a5a6; margin: 0 auto; opacity: 0.8;"><span style="font-size: 12px;">✅</span></div><div style="background: rgba(255,255,255,0.8); border-radius: 4px; font-size: 9px; font-weight: bold; text-align: center; margin-top: 2px; width: 40px; margin-left: -8px; color: #7f8c8d;">Km ${pt.km}</div>`;
-                    const m = L.marker([pt.lat, pt.lon], {icon: L.divIcon({ html: htmlPasse, className: 'custom-vent-icon', iconSize: [24, 40], iconAnchor: [12, 20] })}).addTo(map);
-                    m.bindPopup(`<div style="text-align:center; font-weight:bold; color:#7f8c8d;">Vous êtes déjà passé par ici !</div>`);
-                    marqueursVentParcours.push(m); return; 
-                }
-
-                const hArrivee = tempsDepart + ((pt.km - distanceCyclisteActuelle) / vitMoy) * 3600;
-                
+                const hArrivee = tempsDepart + (pt.km / vitMoy) * 3600;
                 fetch(`https://api.openweathermap.org/data/2.5/forecast?lat=${pt.lat}&lon=${pt.lon}&appid=${cleAPI}&units=metric&lang=fr`)
                 .then(r => r.json()).then(data => {
                     let prev = data.list[0], diffMini = Math.abs(prev.dt - hArrivee);
@@ -495,7 +496,17 @@
                     const pente = ((data[i + 1] - data[i]) / dist) * 100;
                     return (pente < -1) ? '#3498db' : (pente < 3) ? '#27ae60' : (pente < 7) ? '#f39c12' : '#e74c3c';                 
                 }}}]} ,
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, zoom: { pan: { enabled: true, mode: 'x', onPan: () => document.getElementById('btn-reset-zoom').style.display = 'inline-block' }, zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x', onZoom: () => document.getElementById('btn-reset-zoom').style.display = 'inline-block' } } }, scales: { x: { ticks: { maxTicksLimit: 8 } }, y: { title: { display: true, text: 'Mètres' } } } },
+                options: { 
+                    responsive: true, maintainAspectRatio: false, 
+                    // NOUVEAU : CLIC SUR LE GRAPHIQUE ➡️ AFFICHE SUR LA CARTE
+                    onClick: (event, activeElements) => {
+                        if (activeElements.length > 0) {
+                            mettreAJourPointeur(activeElements[0].index, true);
+                        }
+                    },
+                    plugins: { legend: { display: false }, zoom: { pan: { enabled: true, mode: 'x', onPan: () => document.getElementById('btn-reset-zoom').style.display = 'inline-block' }, zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x', onZoom: () => document.getElementById('btn-reset-zoom').style.display = 'inline-block' } } }, 
+                    scales: { x: { ticks: { maxTicksLimit: 8 } }, y: { title: { display: true, text: 'Mètres' } } } 
+                },
                 plugins: [pluginCycliste]
             });
         }
