@@ -259,6 +259,7 @@
         let indexPositionCycliste = null;
         let distanceCyclisteActuelle = 0; 
         let marqueurPositionPointer = null;
+        let sessionChargementId = 0;
 
         function initDateDepart() {
             const dateInput = document.getElementById('date-depart');
@@ -297,6 +298,8 @@
             return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
         }
 
+        const attendre = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
         map.on('click', function(e) {
             if (donneesGPX.length === 0) return; 
             let indexPlusProche = 0;
@@ -333,7 +336,7 @@
             if (recentrerCarte) map.panTo([donneesGPX[index].lat, donneesGPX[index].lon]);
         }
 
-        async function detecterEtAfficherMontees(dataAltitude, rawDistances, listeWaypoints) {
+        async function detecterEtAfficherMontees(dataAltitude, rawDistances, listeWaypoints, sessionId) {
             let ascensionsDetectees = []; let indexDebut = -1; let altMaxLocale = -Infinity;
             for (let i = 1; i < dataAltitude.length; i++) {
                 let alt = dataAltitude[i];
@@ -378,6 +381,10 @@
                 setTimeout(() => { if(map) map.invalidateSize(); }, 100);
             });
 
+            // Sur les traces > 300 km, on ne cherche le nom que pour les montées >= 120m de D+ pour éviter le blocage IP
+            const distTotale = rawDistances[rawDistances.length - 1] || 0;
+            const seuilDeniveleRecherche = distTotale > 300 ? 120 : 40;
+
             let sommetsAchercher = [];
 
             ascensionsDetectees.forEach((montee, index) => {
@@ -397,7 +404,7 @@
                 }
 
                 let isRechercheAPI = false;
-                if (nomAscension.startsWith("Montée")) {
+                if (nomAscension.startsWith("Montée") && montee.denivele >= seuilDeniveleRecherche) {
                     nomAscension = `Montée ${index + 1} ⏳`;
                     isRechercheAPI = true;
                     sommetsAchercher.push({ index: index, lat: latSommet, lon: lonSommet }); 
@@ -435,18 +442,27 @@
                 conteneur.appendChild(div);
             });
 
-            // RECHERCHE PARALLÈLE RAPIDE VIA L'API PHOTON (KOMOOT)
-            const requetesCols = sommetsAchercher.map(async (s) => {
+            // FILE D'ATTENTE CADENCÉE ANTI-BANNISSEMENT (PHOTON + SECOURS NOMINATIM)
+            for (const s of sommetsAchercher) {
+                if (sessionId !== sessionChargementId) return; // Arrêt si un nouveau fichier GPX est chargé
+
                 let bestName = `Montée ${s.index + 1}`;
+                let trouve = false;
+
+                // 1. Tentative via Photon (Komoot) avec timeout de 3.5s
                 try {
-                    const url = `https://photon.komoot.io/reverse?lat=${s.lat}&lon=${s.lon}&limit=10`;
-                    const response = await fetch(url);
-                    if (response.ok) {
-                        const data = await response.json();
+                    const ctrl = new AbortController();
+                    const timer = setTimeout(() => ctrl.abort(), 3500);
+                    const urlPhoton = `https://photon.komoot.io/reverse?lat=${s.lat}&lon=${s.lon}&limit=8`;
+                    const resp = await fetch(urlPhoton, { signal: ctrl.signal });
+                    clearTimeout(timer);
+
+                    if (resp.ok) {
+                        const data = await resp.json();
                         if (data.features && data.features.length > 0) {
                             for (const feat of data.features) {
                                 const props = feat.properties;
-                                const coords = feat.geometry.coordinates; // [lon, lat]
+                                const coords = feat.geometry.coordinates;
                                 const dist = calculerDistance(s.lat, s.lon, coords[1], coords[0]);
                                 
                                 if (props && props.name && dist <= 1.2) {
@@ -457,14 +473,38 @@
                                                      /^(col|côte|cote|mont|pas|port|cime|sommet)\b/i.test(nomMin);
                                     if (estUnCol) {
                                         bestName = props.name;
+                                        trouve = true;
                                         break;
                                     }
                                 }
                             }
                         }
                     }
-                } catch (err) {
-                    console.warn("Erreur Photon pour le sommet", s.index + 1, err);
+                } catch (e) {
+                    // Passage silencieux au serveur de secours Nominatim
+                }
+
+                // 2. Secours via Nominatim (OpenStreetMap) si Photon a échoué
+                if (!trouve) {
+                    try {
+                        const ctrlNom = new AbortController();
+                        const timerNom = setTimeout(() => ctrlNom.abort(), 4000);
+                        const urlNom = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${s.lat}&lon=${s.lon}&zoom=16`;
+                        const respNom = await fetch(urlNom, { signal: ctrlNom.signal });
+                        clearTimeout(timerNom);
+
+                        if (respNom.ok) {
+                            const dataNom = await respNom.json();
+                            if (dataNom && dataNom.name) {
+                                const nomMin = dataNom.name.toLowerCase();
+                                if (dataNom.type === 'saddle' || dataNom.type === 'mountain_pass' || dataNom.type === 'peak' || /^(col|côte|cote|mont|pas|port|cime|sommet)\b/i.test(nomMin)) {
+                                    bestName = dataNom.name;
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        // Ignore si hors-ligne
+                    }
                 }
 
                 let elHtml = document.getElementById(`nom-montee-${s.index}`);
@@ -473,14 +513,17 @@
                     elHtml.title = bestName;
                     elHtml.style.color = "var(--text-primary)";
                 }
-            });
 
-            await Promise.all(requetesCols);
+                // Pause de 350 ms entre chaque requête pour éviter tout blocage serveur
+                await attendre(350);
+            }
         }
 
         document.getElementById('gpx-input').addEventListener('change', function(e) {
             const file = e.target.files[0];
             if (!file) return;
+            sessionChargementId++;
+            const currentSession = sessionChargementId;
             const reader = new FileReader();
             
             reader.onload = function(evt) {
@@ -604,7 +647,7 @@
 
                     genererGraphique(labelsOptimises, altitudeOptimisee, distancesOptimisees);
                     ajouterVentSurParcours(pointsMeteoParcours);
-                    detecterEtAfficherMontees(altitudeOptimisee, distancesOptimisees, listeWaypoints);
+                    detecterEtAfficherMontees(altitudeOptimisee, distancesOptimisees, listeWaypoints, currentSession);
                 }
             };
             reader.readAsText(file);
