@@ -332,7 +332,6 @@
             if (recentrerCarte) map.panTo([donneesGPX[index].lat, donneesGPX[index].lon]);
         }
 
-        // Ajout du paramètre listeWaypoints pour la détection des noms
         function detecterEtAfficherMontees(dataAltitude, rawDistances, listeWaypoints) {
             let ascensionsDetectees = []; let indexDebut = -1; let altMaxLocale = -Infinity;
             for (let i = 1; i < dataAltitude.length; i++) {
@@ -388,7 +387,7 @@
                 if (listeWaypoints && listeWaypoints.length > 0) {
                     listeWaypoints.forEach(wp => {
                         let d = calculerDistance(latSommet, lonSommet, wp.lat, wp.lon) * 1000;
-                        if (d < 500 && d < distMin) { // Moins de 500 mètres
+                        if (d < 500 && d < distMin) { // Tolérance de 500 mètres
                             distMin = d;
                             nomAscension = wp.name;
                         }
@@ -429,26 +428,29 @@
                 };
                 conteneur.appendChild(div);
 
-                // 2. RECHERCHE INTELLIGENTE VIA OPENSTREETMAP (Overpass API) si aucun nom trouvé dans le GPX
+                // 2. RECHERCHE INTELLIGENTE VIA OPENSTREETMAP avec délai anti-blocage
                 if (nomAscension.startsWith("Montée")) {
-                    const query = `[out:json];node(around:600,${latSommet},${lonSommet})["name"];out;`;
-                    fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`)
-                    .then(r => r.json())
-                    .then(data => {
-                        // Filtre pour ne garder que les cols, pics ou noms contenant Col/Côte/Mont
-                        let cols = data.elements.filter(e => 
-                            e.tags && e.tags.name && 
-                            (e.tags.mountain_pass === 'yes' || e.tags.natural === 'saddle' || e.tags.natural === 'peak' || /col |côte |mont |pic |puys /i.test(e.tags.name))
-                        );
-                        if (cols.length > 0) {
-                            let vraiNom = cols[0].tags.name;
-                            let elementTexte = document.getElementById(`nom-montee-${index}`);
-                            if(elementTexte) {
-                                elementTexte.innerText = vraiNom;
-                                elementTexte.title = vraiNom;
+                    setTimeout(() => {
+                        const query = `[out:json];node(around:1200,${latSommet},${lonSommet})["name"];out;`;
+                        
+                        fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`)
+                        .then(r => r.json())
+                        .then(data => {
+                            let cols = data.elements.filter(e => 
+                                e.tags && e.tags.name && 
+                                (e.tags.mountain_pass === 'yes' || e.tags.natural === 'saddle' || e.tags.natural === 'peak' || /(^|\s)(col|côte|cote|mont|pic|puy)(\s|$)/i.test(e.tags.name))
+                            );
+                            
+                            if (cols.length > 0) {
+                                let vraiNom = cols[0].tags.name;
+                                let elementTexte = document.getElementById(`nom-montee-${index}`);
+                                if(elementTexte) {
+                                    elementTexte.innerText = vraiNom;
+                                    elementTexte.title = vraiNom;
+                                }
                             }
-                        }
-                    }).catch(e => console.log("Erreur API topo (ignorez si hors-ligne) :", e));
+                        }).catch(e => console.log("Recherche API ignorée :", e));
+                    }, index * 800);
                 }
             });
         }
@@ -463,7 +465,7 @@
                 const trackPoints = xmlDoc.getElementsByTagName("trkpt");
                 const waypointsNodes = xmlDoc.getElementsByTagName("wpt");
                 
-                // Extraction des Waypoints
+                // Extraction des Waypoints GPX
                 let listeWaypoints = [];
                 for (let i = 0; i < waypointsNodes.length; i++) {
                     let wLat = parseFloat(waypointsNodes[i].getAttribute("lat"));
@@ -552,7 +554,6 @@
 
                     genererGraphique(labelsDistance, dataAltitude, rawDistances);
                     ajouterVentSurParcours(pointsMeteoParcours);
-                    // On envoie la liste des waypoints trouvés à notre fonction de détection
                     detecterEtAfficherMontees(dataAltitude, rawDistances, listeWaypoints);
                 }
             };
