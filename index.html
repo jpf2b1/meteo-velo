@@ -98,7 +98,6 @@
         .leaflet-div-icon { background: transparent; border: none; }
         .leaflet-popup-content { margin: 10px !important; }
 
-        /* DESIGN DES PASTILLES KILOMÉTRIQUES */
         .km-marker {
             background-color: white;
             border: 2px solid #e74c3c;
@@ -112,7 +111,7 @@
             width: 22px;
             height: 22px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-            pointer-events: none; /* Empêche de bloquer le clic sur la ligne en dessous */
+            pointer-events: none; 
         }
     </style>
 </head>
@@ -176,7 +175,7 @@
 
         let traceGPXLayer = null, graphiqueAltitude = null;
         let marqueursVentParcours = [], donneesGPX = [], pointsMeteoParcours = [], latlngsGlobaux = [];
-        let marqueursDistance = []; // NOUVEAU : Tableau pour stocker les pastilles de distance
+        let marqueursDistance = []; 
         let indexPositionCycliste = null, distanceCyclisteActuelle = 0; 
 
         function initDateDepart() {
@@ -297,7 +296,6 @@
                 
                 pointsMeteoParcours = []; donneesGPX = [];
 
-                // ETAPE 1 : Parcours global
                 for (let i = 0; i < trackPoints.length; i++) {
                     const lat = parseFloat(trackPoints[i].getAttribute("lat"));
                     const lon = parseFloat(trackPoints[i].getAttribute("lon"));
@@ -322,7 +320,6 @@
                 if (latlngs.length > 0) {
                     latlngsGlobaux = latlngs; 
                     
-                    // ETAPE 2 : Définition des intervalles Météo
                     let intervalleMeteo = 20;
                     if (distanceTotale < 30) intervalleMeteo = 5;
                     else if (distanceTotale < 60) intervalleMeteo = 10;
@@ -338,16 +335,13 @@
                         }
                     }
 
-                    // Affichage du tracé
                     if (traceGPXLayer) map.removeLayer(traceGPXLayer);
                     traceGPXLayer = L.polyline(latlngs, {color: 'red', weight: 4}).addTo(map);
                     map.fitBounds(traceGPXLayer.getBounds());
 
-                    // NOUVEAU : ETAPE 3 - Affichage des repères Kilométriques sur le tracé
                     marqueursDistance.forEach(m => map.removeLayer(m));
                     marqueursDistance = [];
 
-                    // Calcul de l'intervalle idéal pour les pastilles de distance
                     let intervalleKm = 10;
                     if (distanceTotale < 15) intervalleKm = 1;
                     else if (distanceTotale < 50) intervalleKm = 5;
@@ -357,14 +351,8 @@
                     let prochainKm = intervalleKm;
                     for (let i = 0; i < donneesGPX.length; i++) {
                         if (donneesGPX[i].distance >= prochainKm) {
-                            // On évite de placer une pastille kilométrique si on est presque à l'arrivée (ça ferait doublon)
                             if (distanceTotale - prochainKm > (intervalleKm * 0.2)) {
-                                let iconeKm = L.divIcon({
-                                    html: `<div class="km-marker">${prochainKm}</div>`,
-                                    className: '', // Enlève le fond transparent par défaut de Leaflet
-                                    iconSize: [22, 22],
-                                    iconAnchor: [11, 11]
-                                });
+                                let iconeKm = L.divIcon({ html: `<div class="km-marker">${prochainKm}</div>`, className: '', iconSize: [22, 22], iconAnchor: [11, 11] });
                                 let marqueurKm = L.marker([donneesGPX[i].lat, donneesGPX[i].lon], {icon: iconeKm, interactive: false}).addTo(map);
                                 marqueursDistance.push(marqueurKm);
                             }
@@ -372,19 +360,16 @@
                         }
                     }
 
-                    // Sécurité pour le marqueur Météo d'arrivée
                     if (pointsMeteoParcours.length > 0 && (distanceTotale - pointsMeteoParcours[pointsMeteoParcours.length - 1].km < (intervalleMeteo * 0.2))) {
                         pointsMeteoParcours.pop(); 
                     }
                     pointsMeteoParcours.push({ lat: derniereLat, lon: derniereLon, km: distanceTotale.toFixed(1), estArrivee: true });
 
-                    // Maj de l'interface
                     document.getElementById('stat-dist').innerText = distanceTotale.toFixed(1);
                     document.getElementById('stat-denivele').innerText = Math.round(denivelePositif);
                     document.getElementById('gpx-panel').style.display = 'block';
                     setTimeout(() => map.invalidateSize(), 300); 
 
-                    // Lancement des différentes fonctions
                     genererGraphique(labelsDistance, dataAltitude, rawDistances);
                     ajouterVentSurParcours(pointsMeteoParcours);
                     detecterEtAfficherMontees(dataAltitude, rawDistances);
@@ -393,7 +378,6 @@
             reader.readAsText(file);
         });
 
-        // === BOUTONS INTERFACE ===
         document.getElementById('btn-cols').addEventListener('click', function() {
             const liste = document.getElementById('liste-montees');
             if (liste.style.display === 'none' || liste.style.display === '') {
@@ -425,7 +409,7 @@
         document.getElementById('vitesse-moyenne').addEventListener('change', () => { if (pointsMeteoParcours.length > 0) ajouterVentSurParcours(pointsMeteoParcours); });
         document.getElementById('date-depart').addEventListener('change', () => { if (pointsMeteoParcours.length > 0) ajouterVentSurParcours(pointsMeteoParcours); });
 
-        // === METEO ET VENT SUR LE PARCOURS ===
+        // === METEO INTELLIGENTE SUR LE PARCOURS ===
         function ajouterVentSurParcours(points) {
             marqueursVentParcours.forEach(m => map.removeLayer(m));
             marqueursVentParcours = [];
@@ -456,13 +440,40 @@
                     const hTexte = prefix + dateArr.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
                     
                     const vitKmh = Math.round(prev.wind.speed * 3.6), temp = Math.round(prev.main.temp), ress = Math.round(prev.main.feels_like);
-                    const bord = pt.estArrivee ? '#27ae60' : '#2980b9', drap = pt.estArrivee ? '🏁 ' : '';
+                    const drap = pt.estArrivee ? '🏁 ' : '';
 
-                    const html = `<div style="background: rgba(255,255,255,0.9); border-radius: 50%; width: 34px; height: 34px; display: flex; justify-content: center; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.3); border: 2px solid ${bord}; margin: 0 auto; pointer-events: none;"><div style="transform: rotate(${prev.wind.deg}deg); font-size: 20px;">⬇</div></div><div style="background: white; border-radius: 4px; font-size: 11px; font-weight: bold; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.3); margin-top: 2px; width: 62px; margin-left: -14px; padding: 2px 0; border: 1px solid ${bord}; pointer-events: none;">${drap}${vitKmh} km/h<br><span style="color: #e74c3c; font-size: 10px;">🕒 ${hTexte}</span></div>`;
+                    // NOUVEAU : CODE COULEUR DU VENT
+                    let couleurVent = '#27ae60'; // Vert par défaut (Calme, < 15km/h)
+                    if (vitKmh >= 30) couleurVent = '#e74c3c'; // Rouge (Fort, > 30km/h)
+                    else if (vitKmh >= 15) couleurVent = '#f39c12'; // Orange (Modéré, 15-30km/h)
+
+                    // NOUVEAU : DETECTION DE LA PLUIE
+                    let probaPluie = prev.pop ? Math.round(prev.pop * 100) : 0;
+                    // On affiche le texte de pluie sous la bulle seulement si risque > 10%
+                    let textePluie = probaPluie > 10 ? `<span style="color: #3498db; font-weight: bold;">💧 ${probaPluie}%</span><br>` : '';
+
+                    // NOUVEAU : Construction visuelle intelligente de la bulle
+                    const html = `
+                    <div style="background: rgba(255,255,255,0.95); border-radius: 50%; width: 36px; height: 36px; display: flex; justify-content: center; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.3); border: 3px solid ${couleurVent}; margin: 0 auto; pointer-events: none;">
+                        <div style="transform: rotate(${prev.wind.deg}deg); font-size: 22px; font-weight: bold; color: ${couleurVent};">⬇</div>
+                    </div>
+                    <div style="background: white; border-radius: 4px; font-size: 11px; font-weight: bold; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.3); margin-top: 4px; width: 68px; margin-left: -16px; padding: 3px 0; border: 1px solid ${couleurVent}; pointer-events: none; line-height: 1.3;">
+                        ${drap}${vitKmh} km/h<br>
+                        ${textePluie}
+                        <span style="color: #7f8c8d; font-size: 10px;">🕒 ${hTexte}</span>
+                    </div>`;
                     
-                    const marqueur = L.marker([pt.lat, pt.lon], {icon: L.divIcon({ html: html, className: 'custom-vent-icon', iconSize: [34, 60], iconAnchor: [17, 25] })}).addTo(map);
+                    const marqueur = L.marker([pt.lat, pt.lon], {icon: L.divIcon({ html: html, className: 'custom-vent-icon', iconSize: [36, 68], iconAnchor: [18, 30] })}).addTo(map);
                     
-                    marqueur.bindPopup(`<div style="text-align: center; font-family: sans-serif; font-size: 13px; line-height: 1.4;"><div style="font-weight: bold; color: #2980b9; font-size: 16px; margin-bottom: 2px;">🌡️ ${temp}°C</div><div style="color: #2c3e50;">Ressenti : <b>${ress}°C</b></div><div style="text-transform: capitalize; color: #7f8c8d; margin-top: 5px;">${prev.weather[0].description}</div></div>`);
+                    // Ajout du détail de la pluie dans la popup au clic
+                    let detailPluie = probaPluie > 0 ? `<div style="color: #3498db; margin-top: 4px;"><b>💧 Pluie : ${probaPluie}% de risque</b></div>` : '';
+
+                    marqueur.bindPopup(`<div style="text-align: center; font-family: sans-serif; font-size: 13px; line-height: 1.4;">
+                        <div style="font-weight: bold; color: #2980b9; font-size: 16px; margin-bottom: 2px;">🌡️ ${temp}°C</div>
+                        <div style="color: #2c3e50;">Ressenti : <b>${ress}°C</b></div>
+                        ${detailPluie}
+                        <div style="text-transform: capitalize; color: #7f8c8d; margin-top: 5px;">${prev.weather[0].description}</div>
+                    </div>`);
                     marqueur.on('click', function(e) { this.openPopup(); });
                     
                     marqueursVentParcours.push(marqueur); 
