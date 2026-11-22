@@ -333,74 +333,54 @@
             if (recentrerCarte) map.panTo([donneesGPX[index].lat, donneesGPX[index].lon]);
         }
 
-        // Recherche géographique élargie (±2 km) pour Cols, Monts, Pas, Puys, Ports, etc.
-        async function rechercherColProche(lat, lon) {
-            const deltaLat = 0.018; // ~2.0 km
-            const deltaLon = 0.025; // ~2.0 km
-            const viewbox = `${lon - deltaLon},${lat + deltaLat},${lon + deltaLon},${lat - deltaLat}`;
-            const regexExclusion = /côte d'azur|côte-d'or|côtes-d'armor|cote d'azur|commune|arrondissement|canton/i;
-            const regexSommet = /^(col|côte|cote|mont|pas|port|cime|sommet|signal|pic|puy|ballon|crêt|cret|collet|pla|station)\b/i;
+        // Recherche via l'API officielle IGN Géoplateforme (sans clé API, rapide et sans blocage CORS)
+        async function rechercherColIGN(lat, lon) {
+            const regexRelief = /\b(col|côte|cote|mont|pas|port|cime|sommet|signal|pic|puy|ballon|crêt|cret|collet|pla|alpe|station|rocher|tête|tete|montagne)\b/i;
 
-            // 1. Interrogation directe au point exact à zoom 15 (capture Mont Ventoux, Alpe d'Huez, sommets isolés)
             try {
-                const ctrlRev = new AbortController();
-                const timerRev = setTimeout(() => ctrlRev.abort(), 4000);
-                const urlRev = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=15&accept-language=fr`;
-                const respRev = await fetch(urlRev, { signal: ctrlRev.signal });
-                clearTimeout(timerRev);
+                const ctrl = new AbortController();
+                const timer = setTimeout(() => ctrl.abort(), 5000);
+                // Interrogation des toponymes (POI) dans un rayon de 1200 mètres autour du sommet
+                const urlIGN = `https://data.geopf.fr/geocodage/reverse?lon=${lon}&lat=${lat}&index=poi&searchgeom={"type":"Circle","coordinates":[${lon},${lat}],"radius":1200}&limit=15`;
+                const resp = await fetch(urlIGN, { signal: ctrl.signal });
+                clearTimeout(timer);
 
-                if (respRev.ok) {
-                    const data = await respRev.json();
-                    const nom = data.name || "";
-                    if (nom && !regexExclusion.test(nom)) {
-                        if (data.type === 'saddle' || data.type === 'mountain_pass' || data.type === 'peak' || regexSommet.test(nom)) {
-                            return nom;
-                        }
-                    }
-                }
-            } catch (e) {}
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.features && data.features.length > 0) {
+                        let meilleurCol = null;
+                        let distMinCol = Infinity;
+                        let meilleurAutreRelief = null;
+                        let distMinAutre = Infinity;
 
-            await attendre(1050);
+                        for (const feat of data.features) {
+                            const props = feat.properties || {};
+                            const coords = feat.geometry ? feat.geometry.coordinates : null;
+                            const nom = props.toponym || props.name || "";
+                            const categorie = (props.category || []).join(' ').toLowerCase();
 
-            // 2. Recherche ciblée par mots-clés de relief dans le rayon (±2 km)
-            const motsCles = ['col', 'mont', 'pas', 'puy'];
-            for (const mot of motsCles) {
-                try {
-                    const ctrl = new AbortController();
-                    const timer = setTimeout(() => ctrl.abort(), 4000);
-                    const urlSearch = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${mot}&viewbox=${viewbox}&bounded=1&limit=5&accept-language=fr`;
-                    const resp = await fetch(urlSearch, { signal: ctrl.signal });
-                    clearTimeout(timer);
+                            if (!nom || !coords) continue;
 
-                    if (resp.ok) {
-                        const results = await resp.json();
-                        let meilleurNom = null;
-                        let distMin = 2.0;
+                            const dist = calculerDistance(lat, lon, coords[1], coords[0]);
+                            const estColExplicite = /^(col|pas|port|collet)\b/i.test(nom) || categorie.includes('col');
+                            const estAutreRelief = regexRelief.test(nom) || categorie.includes('sommet') || categorie.includes('montagne') || categorie.includes('oronyme');
 
-                        for (const item of results) {
-                            const nom = item.name || "";
-                            if (!nom || regexExclusion.test(nom)) continue;
-
-                            const estReliefValide = item.type === 'saddle' || 
-                                                    item.type === 'mountain_pass' || 
-                                                    item.type === 'peak' || 
-                                                    item.category === 'natural' ||
-                                                    regexSommet.test(nom);
-
-                            if (estReliefValide) {
-                                const d = calculerDistance(lat, lon, parseFloat(item.lat), parseFloat(item.lon));
-                                if (d < distMin) {
-                                    distMin = d;
-                                    meilleurNom = nom;
-                                }
+                            if (estColExplicite && dist < distMinCol) {
+                                distMinCol = dist;
+                                meilleurCol = nom;
+                            } else if (estAutreRelief && dist < distMinAutre) {
+                                distMinAutre = dist;
+                                meilleurAutreRelief = nom;
                             }
                         }
-                        if (meilleurNom) return meilleurNom;
-                    }
-                } catch (e) {}
-                await attendre(1050);
-            }
 
+                        if (meilleurCol) return meilleurCol;
+                        if (meilleurAutreRelief) return meilleurAutreRelief;
+                    }
+                }
+            } catch (e) {
+                console.warn("Erreur API IGN :", e);
+            }
             return null;
         }
 
@@ -451,7 +431,7 @@
             });
 
             const distTotale = rawDistances[rawDistances.length - 1] || 0;
-            const seuilDeniveleRecherche = distTotale > 300 ? 120 : 40;
+            const seuilDeniveleRecherche = distTotale > 300 ? 100 : 35;
 
             let sommetsAchercher = [];
 
@@ -511,11 +491,12 @@
                 conteneur.appendChild(div);
             });
 
+            // Interrogation rapide de l'API IGN (150ms entre chaque requête, limite IGN = 50 req/sec)
             for (const s of sommetsAchercher) {
                 if (sessionId !== sessionChargementId) return;
 
                 let bestName = `Montée ${s.index + 1}`;
-                const nomTrouve = await rechercherColProche(s.lat, s.lon);
+                const nomTrouve = await rechercherColIGN(s.lat, s.lon);
                 
                 if (nomTrouve) {
                     bestName = nomTrouve.charAt(0).toUpperCase() + nomTrouve.slice(1);
@@ -527,6 +508,8 @@
                     elHtml.title = bestName;
                     elHtml.style.color = "var(--text-primary)";
                 }
+
+                await attendre(150);
             }
         }
 
