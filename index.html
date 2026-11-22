@@ -340,8 +340,8 @@
             try {
                 const ctrl = new AbortController();
                 const timer = setTimeout(() => ctrl.abort(), 5000);
-                // Interrogation des toponymes (POI) dans un rayon de 1200 mètres autour du sommet
-                const urlIGN = `https://data.geopf.fr/geocodage/reverse?lon=${lon}&lat=${lat}&index=poi&searchgeom={"type":"Circle","coordinates":[${lon},${lat}],"radius":1200}&limit=15`;
+                // Requête IGN valide : recherche des toponymes (POI) autour des coordonnées
+                const urlIGN = `https://data.geopf.fr/geocodage/reverse?lon=${lon}&lat=${lat}&index=poi&limit=15`;
                 const resp = await fetch(urlIGN, { signal: ctrl.signal });
                 clearTimeout(timer);
 
@@ -362,6 +362,8 @@
                             if (!nom || !coords) continue;
 
                             const dist = calculerDistance(lat, lon, coords[1], coords[0]);
+                            if (dist > 2.0) continue; // On garde uniquement ce qui est à moins de 2 km du sommet
+
                             const estColExplicite = /^(col|pas|port|collet)\b/i.test(nom) || categorie.includes('col');
                             const estAutreRelief = regexRelief.test(nom) || categorie.includes('sommet') || categorie.includes('montagne') || categorie.includes('oronyme');
 
