@@ -396,10 +396,10 @@
                     });
                 }
 
-                let isRechercheOSM = false;
+                let isRechercheAPI = false;
                 if (nomAscension.startsWith("Montée")) {
                     nomAscension = `Montée ${index + 1} ⏳`;
-                    isRechercheOSM = true;
+                    isRechercheAPI = true;
                     sommetsAchercher.push({ index: index, lat: latSommet, lon: lonSommet }); 
                 }
 
@@ -415,7 +415,7 @@
                 
                 div.innerHTML = `
                     <div style="flex: 1.2; overflow: hidden;">
-                        <div id="nom-montee-${index}" style="font-weight:900; margin-bottom:2px; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; ${isRechercheOSM ? 'color:var(--text-secondary);' : ''}" title="${nomAscension}">${nomAscension}</div>
+                        <div id="nom-montee-${index}" style="font-weight:900; margin-bottom:2px; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; ${isRechercheAPI ? 'color:var(--text-secondary);' : ''}" title="${nomAscension}">${nomAscension}</div>
                         <div style="color:var(--text-secondary); font-size:11px;">📍 Km ${montee.kmDebut.toFixed(1)}</div>
                     </div>
                     <div class="montee-data" style="flex: 1; text-align:center;">
@@ -435,65 +435,44 @@
                 conteneur.appendChild(div);
             });
 
-            if (sommetsAchercher.length > 0) {
-                let subQueries = sommetsAchercher.map(s => `node(around:1200,${s.lat},${s.lon})["mountain_pass"="yes"]["name"];`).join("");
-                const queryOSM = `[out:json][timeout:8];(${subQueries});out body;`;
-                
-                const serveursOverpass = [
-                    "https://overpass-api.de/api/interpreter",
-                    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
-                    "https://overpass.private.coffee/api/interpreter"
-                ];
-
-                let donneesTrouvees = null;
-
-                for (const url of serveursOverpass) {
-                    try {
-                        const controller = new AbortController();
-                        const timeoutId = setTimeout(() => controller.abort(), 6000);
-
-                        const response = await fetch(url, {
-                            method: 'POST',
-                            body: "data=" + encodeURIComponent(queryOSM),
-                            headers: { "Content-type": "application/x-www-form-urlencoded" },
-                            signal: controller.signal
-                        });
-                        
-                        clearTimeout(timeoutId);
-
-                        if (response.ok) {
-                            donneesTrouvees = await response.json();
-                            console.log("Succès avec le serveur :", url);
-                            break;
-                        }
-                    } catch (err) {
-                        console.warn("Serveur trop lent ou indisponible, passage au suivant :", url);
-                    }
-                }
-
-                sommetsAchercher.forEach(s => {
-                    let bestName = `Montée ${s.index + 1}`;
-                    let distMinOSM = 1.5;
-
-                    if (donneesTrouvees && donneesTrouvees.elements && donneesTrouvees.elements.length > 0) {
-                        donneesTrouvees.elements.forEach(el => {
-                            if (el.lat && el.lon && el.tags && el.tags.name) {
-                                let d = calculerDistance(s.lat, s.lon, el.lat, el.lon);
-                                if (d < distMinOSM) {
-                                    distMinOSM = d;
-                                    bestName = el.tags.name;
+            // RECHERCHE RAPIDE VIA L'API PHOTON (KOMOOT)
+            for (const s of sommetsAchercher) {
+                let bestName = `Montée ${s.index + 1}`;
+                try {
+                    const url = `https://photon.komoot.io/reverse?lat=${s.lat}&lon=${s.lon}&limit=10`;
+                    const response = await fetch(url);
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.features && data.features.length > 0) {
+                            for (const feat of data.features) {
+                                const props = feat.properties;
+                                const coords = feat.geometry.coordinates; // [lon, lat]
+                                const dist = calculerDistance(s.lat, s.lon, coords[1], coords[0]);
+                                
+                                if (props && props.name && dist <= 1.2) {
+                                    const nomMin = props.name.toLowerCase();
+                                    const estUnCol = props.osm_value === 'saddle' || 
+                                                     props.osm_value === 'mountain_pass' || 
+                                                     props.osm_value === 'peak' ||
+                                                     /^(col|côte|cote|mont|pas|port|cime|sommet)\b/i.test(nomMin);
+                                    if (estUnCol) {
+                                        bestName = props.name;
+                                        break;
+                                    }
                                 }
                             }
-                        });
+                        }
                     }
+                } catch (err) {
+                    console.warn("Erreur Photon pour le sommet", s.index + 1, err);
+                }
 
-                    let elHtml = document.getElementById(`nom-montee-${s.index}`);
-                    if (elHtml) {
-                        elHtml.innerText = bestName;
-                        elHtml.title = bestName;
-                        elHtml.style.color = "var(--text-primary)"; 
-                    }
-                });
+                let elHtml = document.getElementById(`nom-montee-${s.index}`);
+                if (elHtml) {
+                    elHtml.innerText = bestName;
+                    elHtml.title = bestName;
+                    elHtml.style.color = "var(--text-primary)";
+                }
             }
         }
 
