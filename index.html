@@ -16,9 +16,6 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 
     <style>
-        /* ==========================================================================
-           VARIABLES DE THÈMES (JOUR / NUIT SOMBRE SPORTIF)
-           ========================================================================== */
         :root {
             --bg-body: #ffffff;
             --bg-panel: #ffffff;
@@ -336,6 +333,41 @@
             if (recentrerCarte) map.panTo([donneesGPX[index].lat, donneesGPX[index].lon]);
         }
 
+        // Fonction d'extraction intelligente du nom du col depuis la réponse Nominatim
+        function extraireNomCol(dataNom) {
+            if (!dataNom) return null;
+            const regexCol = /\b(col|côte|cote|mont|pas|port|cime|sommet|signal|pic|puy|ballon|crêt|cret)\s+[^,]+/i;
+
+            // 1. Vérifier le nom principal retourné
+            if (dataNom.name) {
+                const matchNom = dataNom.name.match(regexCol);
+                if (matchNom) return matchNom[0].trim();
+                if (dataNom.type === 'saddle' || dataNom.type === 'mountain_pass' || dataNom.type === 'peak') {
+                    return dataNom.name;
+                }
+            }
+
+            // 2. Vérifier les champs d'adresse détaillés
+            if (dataNom.address) {
+                for (const key of ['peak', 'mountain_pass', 'saddle', 'natural', 'locality', 'road']) {
+                    if (dataNom.address[key]) {
+                        const matchAddr = dataNom.address[key].match(regexCol);
+                        if (matchAddr) return matchAddr[0].replace(/^route\s+du\s+/i, '').trim();
+                    }
+                }
+            }
+
+            // 3. Vérifier l'adresse complète (display_name)
+            if (dataNom.display_name) {
+                const matchDisplay = dataNom.display_name.match(regexCol);
+                if (matchDisplay) {
+                    return matchDisplay[0].replace(/^route\s+du\s+/i, '').trim();
+                }
+            }
+
+            return null;
+        }
+
         async function detecterEtAfficherMontees(dataAltitude, rawDistances, listeWaypoints, sessionId) {
             let ascensionsDetectees = []; let indexDebut = -1; let altMaxLocale = -Infinity;
             for (let i = 1; i < dataAltitude.length; i++) {
@@ -381,7 +413,6 @@
                 setTimeout(() => { if(map) map.invalidateSize(); }, 100);
             });
 
-            // Sur les traces > 300 km, on ne cherche le nom que pour les montées >= 120m de D+
             const distTotale = rawDistances[rawDistances.length - 1] || 0;
             const seuilDeniveleRecherche = distTotale > 300 ? 120 : 40;
 
@@ -442,62 +473,28 @@
                 conteneur.appendChild(div);
             });
 
-            // RECHERCHE DIRECTE VIA NOMINATIM (OSM) + SECOURS BIGDATACLOUD (Zéro Photon)
+            // INTERROGATION NOMINATIM AVEC ZOOM PRÉCIS (18) ET EXTRACTION LARGE
             for (const s of sommetsAchercher) {
                 if (sessionId !== sessionChargementId) return;
 
                 let bestName = `Montée ${s.index + 1}`;
-                let trouve = false;
 
-                // 1. Interrogation directe de Nominatim (OpenStreetMap officiel)
                 try {
                     const ctrlNom = new AbortController();
-                    const timerNom = setTimeout(() => ctrlNom.abort(), 4500);
-                    const urlNom = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${s.lat}&lon=${s.lon}&zoom=16&accept-language=fr`;
+                    const timerNom = setTimeout(() => ctrlNom.abort(), 5000);
+                    const urlNom = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${s.lat}&lon=${s.lon}&zoom=18&addressdetails=1&accept-language=fr`;
                     const respNom = await fetch(urlNom, { signal: ctrlNom.signal });
                     clearTimeout(timerNom);
 
                     if (respNom.ok) {
                         const dataNom = await respNom.json();
-                        if (dataNom) {
-                            const nomBrut = dataNom.name || (dataNom.address && (dataNom.address.peak || dataNom.address.mountain_pass || dataNom.address.natural));
-                            if (nomBrut) {
-                                const nomMin = nomBrut.toLowerCase();
-                                const estUnCol = dataNom.type === 'saddle' || 
-                                                 dataNom.type === 'mountain_pass' || 
-                                                 dataNom.type === 'peak' || 
-                                                 dataNom.category === 'natural' ||
-                                                 /^(col|côte|cote|mont|pas|port|cime|sommet|signal|pic|puy|ballon|crêt|cret)\b/i.test(nomMin);
-                                if (estUnCol) {
-                                    bestName = nomBrut;
-                                    trouve = true;
-                                }
-                            }
+                        const nomDetecte = extraireNomCol(dataNom);
+                        if (nomDetecte) {
+                            bestName = nomDetecte.charAt(0).toUpperCase() + nomDetecte.slice(1);
                         }
                     }
                 } catch (e) {
-                    // Passage au secours BigDataCloud si Nominatim est occupé
-                }
-
-                // 2. Secours ultra-rapide via BigDataCloud (CDN mondial, sans timeout)
-                if (!trouve) {
-                    try {
-                        const urlBDC = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${s.lat}&longitude=${s.lon}&localityLanguage=fr`;
-                        const respBDC = await fetch(urlBDC);
-                        if (respBDC.ok) {
-                            const dataBDC = await respBDC.json();
-                            if (dataBDC && dataBDC.localityInfo && dataBDC.localityInfo.informative) {
-                                for (const info of dataBDC.localityInfo.informative) {
-                                    if (info.name && /^(col|côte|cote|mont|pas|port|cime|sommet)\b/i.test(info.name)) {
-                                        bestName = info.name;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    } catch (e) {
-                        // Ignore si hors-ligne
-                    }
+                    // Ignore en cas de coupure réseau
                 }
 
                 let elHtml = document.getElementById(`nom-montee-${s.index}`);
@@ -507,7 +504,7 @@
                     elHtml.style.color = "var(--text-primary)";
                 }
 
-                // Respect de la limite Nominatim (1 requête / seconde max)
+                // Délai réglementaire Nominatim (1.1s entre chaque sommet)
                 await attendre(1100);
             }
         }
@@ -563,7 +560,6 @@
                 }
 
                 if (latlngs.length > 0) {
-                    // --- OPTIMISATION ULTRA-DISTANCE (MAX ~1500 POINTS VISUELS) ---
                     const maxPointsVisuels = 1500;
                     const pas = Math.max(1, Math.floor(latlngs.length / maxPointsVisuels));
                     
