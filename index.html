@@ -333,57 +333,89 @@
             if (recentrerCarte) map.panTo([donneesGPX[index].lat, donneesGPX[index].lon]);
         }
 
-        // Recherche via l'API officielle IGN Géoplateforme (sans clé API, rapide et sans blocage CORS)
+        // Recherche haute précision IGN : combine recherche ciblée par mots-clés (rayon 1.8km) + reverse POI
         async function rechercherColIGN(lat, lon) {
-            const regexRelief = /\b(col|côte|cote|mont|pas|port|cime|sommet|signal|pic|puy|ballon|crêt|cret|collet|pla|alpe|station|rocher|tête|tete|montagne)\b/i;
+            const regexColExplicite = /^(col|pas|port|collet|baisse|hourquette|brèche|breche)\b/i;
+            const regexRelief = /\b(col|côte|cote|mont|pas|port|cime|sommet|signal|pic|puy|ballon|crêt|cret|collet|pla|alpe|station|rocher|tête|tete|montagne|suc)\b/i;
+            const regexExclure = /parking|refuge|chalet|gîte|gite|hôtel|hotel|restaurant|table d'orientation|belvédère|belvedere|panorama|observatoire|chapelle|croix|monument/i;
 
-            try {
-                const ctrl = new AbortController();
-                const timer = setTimeout(() => ctrl.abort(), 5000);
-                // Requête IGN valide : recherche des toponymes (POI) autour des coordonnées
-                const urlIGN = `https://data.geopf.fr/geocodage/reverse?lon=${lon}&lat=${lat}&index=poi&limit=15`;
-                const resp = await fetch(urlIGN, { signal: ctrl.signal });
-                clearTimeout(timer);
+            let candidats = [];
 
-                if (resp.ok) {
-                    const data = await resp.json();
-                    if (data.features && data.features.length > 0) {
-                        let meilleurCol = null;
-                        let distMinCol = Infinity;
-                        let meilleurAutreRelief = null;
-                        let distMinAutre = Infinity;
+            // 1. Recherche ciblée sur l'index POI de l'IGN avec priorité géographique (attrape Col d'Izoard, Mont Ventoux, Pas de Peyrol...)
+            const requetes = ['col', 'mont', 'pas', 'puy', 'sommet'];
+            const promesses = requetes.map(async (mot) => {
+                try {
+                    const url = `https://data.geopf.fr/geocodage/search?q=${mot}&lon=${lon}&lat=${lat}&index=poi&limit=5`;
+                    const resp = await fetch(url);
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        if (data.features) {
+                            for (const feat of data.features) {
+                                const props = feat.properties || {};
+                                const coords = feat.geometry ? feat.geometry.coordinates : null;
+                                const nom = props.toponym || props.name || "";
+                                if (!nom || !coords || regexExclure.test(nom)) continue;
 
-                        for (const feat of data.features) {
-                            const props = feat.properties || {};
-                            const coords = feat.geometry ? feat.geometry.coordinates : null;
-                            const nom = props.toponym || props.name || "";
-                            const categorie = (props.category || []).join(' ').toLowerCase();
-
-                            if (!nom || !coords) continue;
-
-                            const dist = calculerDistance(lat, lon, coords[1], coords[0]);
-                            if (dist > 2.0) continue; // On garde uniquement ce qui est à moins de 2 km du sommet
-
-                            const estColExplicite = /^(col|pas|port|collet)\b/i.test(nom) || categorie.includes('col');
-                            const estAutreRelief = regexRelief.test(nom) || categorie.includes('sommet') || categorie.includes('montagne') || categorie.includes('oronyme');
-
-                            if (estColExplicite && dist < distMinCol) {
-                                distMinCol = dist;
-                                meilleurCol = nom;
-                            } else if (estAutreRelief && dist < distMinAutre) {
-                                distMinAutre = dist;
-                                meilleurAutreRelief = nom;
+                                const dist = calculerDistance(lat, lon, coords[1], coords[0]);
+                                if (dist <= 1.8) {
+                                    candidats.push({
+                                        nom: nom,
+                                        dist: dist,
+                                        estCol: regexColExplicite.test(nom),
+                                        estRelief: regexRelief.test(nom)
+                                    });
+                                }
                             }
                         }
-
-                        if (meilleurCol) return meilleurCol;
-                        if (meilleurAutreRelief) return meilleurAutreRelief;
                     }
-                }
-            } catch (e) {
-                console.warn("Erreur API IGN :", e);
-            }
-            return null;
+                } catch (e) {}
+            });
+
+            // 2. En parallèle : recherche reverse POI à proximité immédiate (attrape les noms atypiques sans mot-clé)
+            const promesseReverse = (async () => {
+                try {
+                    const urlRev = `https://data.geopf.fr/geocodage/reverse?lon=${lon}&lat=${lat}&index=poi&limit=20`;
+                    const respRev = await fetch(urlRev);
+                    if (respRev.ok) {
+                        const dataRev = await respRev.json();
+                        if (dataRev.features) {
+                            for (const feat of dataRev.features) {
+                                const props = feat.properties || {};
+                                const coords = feat.geometry ? feat.geometry.coordinates : null;
+                                const nom = props.toponym || props.name || "";
+                                const cat = (props.category || []).join(' ').toLowerCase();
+                                if (!nom || !coords || regexExclure.test(nom)) continue;
+
+                                const dist = calculerDistance(lat, lon, coords[1], coords[0]);
+                                if (dist <= 1.5) {
+                                    const estCatRelief = cat.includes('col') || cat.includes('sommet') || cat.includes('montagne') || cat.includes('oronyme') || cat.includes('relief');
+                                    if (estCatRelief || regexRelief.test(nom)) {
+                                        candidats.push({
+                                            nom: nom,
+                                            dist: dist,
+                                            estCol: regexColExplicite.test(nom) || cat.includes('col'),
+                                            estRelief: true
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (e) {}
+            })();
+
+            await Promise.all([...promesses, promesseReverse]);
+
+            if (candidats.length === 0) return null;
+
+            // Tri intelligent : priorité absolue aux Cols/Pas/Monts explicites les plus proches
+            candidats.sort((a, b) => {
+                if (a.estCol !== b.estCol) return a.estCol ? -1 : 1;
+                if (a.estRelief !== b.estRelief) return a.estRelief ? -1 : 1;
+                return a.dist - b.dist;
+            });
+
+            return candidats[0].nom;
         }
 
         async function detecterEtAfficherMontees(dataAltitude, rawDistances, latlngsSource, listeWaypoints, sessionId) {
@@ -433,7 +465,7 @@
             });
 
             const distTotale = rawDistances[rawDistances.length - 1] || 0;
-            const seuilDeniveleRecherche = distTotale > 300 ? 100 : 35;
+            const seuilDeniveleRecherche = distTotale > 300 ? 80 : 30;
 
             let sommetsAchercher = [];
 
@@ -493,7 +525,7 @@
                 conteneur.appendChild(div);
             });
 
-            // Interrogation rapide de l'API IGN (150ms entre chaque requête, limite IGN = 50 req/sec)
+            // Interrogation rapide IGN (cadencée à 200ms par sommet)
             for (const s of sommetsAchercher) {
                 if (sessionId !== sessionChargementId) return;
 
@@ -511,7 +543,7 @@
                     elHtml.style.color = "var(--text-primary)";
                 }
 
-                await attendre(150);
+                await attendre(200);
             }
         }
 
