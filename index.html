@@ -74,7 +74,7 @@
 
         #panel-header {
             text-align: center; font-size: 14px; font-weight: bold; color: var(--text-primary);
-            padding: 8px 0; margin: -10px -10px 10px -10px; background: var(--bg-header);
+            padding: 7px 0; margin: -10px -10px 8px -10px; background: var(--bg-header);
             cursor: pointer; border-bottom: 1px solid var(--shadow); 
             display: flex; justify-content: center; align-items: center; gap: 8px;
             transition: background-color 0.3s, color 0.3s;
@@ -106,27 +106,29 @@
         }
         .btn-theme-toggle:active { transform: scale(0.9); }
 
+        /* OPTION 1 : BARRE DE STATISTIQUES ET PLANIFICATEUR FUSIONNÉS */
         .stats-gpx { 
-            display: flex; justify-content: space-around; align-items: center; flex-wrap: wrap; 
-            font-weight: bold; color: var(--text-primary); margin-bottom: 8px; font-size: 13px; gap: 5px; 
+            display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; 
+            font-weight: bold; color: var(--text-primary); margin-bottom: 6px; font-size: 12px; gap: 6px; 
         }
-        .planification-box { 
-            width: 100%; text-align: center; margin-bottom: 10px; font-size: 14px; font-weight: bold; 
-            color: var(--text-primary); display: flex; justify-content: center; align-items: center; gap: 8px; 
+        .stat-chip {
+            display: inline-flex; align-items: center; gap: 4px;
+            background: var(--card-bg); border: 1px solid var(--widget-border);
+            padding: 3px 7px; border-radius: 6px;
         }
         .input-vitesse, .input-date { 
-            text-align: center; border: 1px solid var(--text-secondary); border-radius: 6px; padding: 6px; 
+            text-align: center; border: 1px solid var(--text-secondary); border-radius: 5px; padding: 3px 4px; 
             font-weight: bold; color: var(--border-panel); font-family: inherit; background-color: var(--bg-panel);
             transition: color 0.3s, background-color 0.3s;
         }
-        .input-vitesse { width: 50px; }
-        .input-date { font-size: 16px; max-width: 200px; }
+        .input-vitesse { width: 42px; font-size: 12px; }
+        .input-date { font-size: 12px; max-width: 148px; }
         
-        .chart-container { position: relative; height: 165px; width: 100%; margin-top: 5px; cursor: crosshair; }
-        .legende-pente { text-align: center; font-size: 11px; margin-top: 8px; font-weight: bold; color: var(--text-pente-legende); }
+        .chart-container { position: relative; height: 165px; width: 100%; margin-top: 4px; cursor: crosshair; }
+        .legende-pente { text-align: center; font-size: 11px; margin-top: 6px; font-weight: bold; color: var(--text-pente-legende); }
         
         .btn-reset, .btn-toggle { 
-            padding: 4px 8px; font-size: 12px; border-radius: 4px; background: var(--bg-panel); 
+            padding: 4px 8px; font-size: 12px; border-radius: 6px; background: var(--bg-panel); 
             cursor: pointer; font-weight: bold; border: 1px solid var(--border-panel); color: var(--border-panel);
             transition: all 0.3s;
         }
@@ -136,7 +138,7 @@
         
         #liste-montees {
             display: none; max-height: 160px; overflow-y: auto; 
-            margin-top: 15px; padding-right: 5px; scrollbar-width: thin;
+            margin-top: 12px; padding-right: 5px; scrollbar-width: thin;
         }
         .montee-item {
             display: flex; justify-content: space-between; align-items: center;
@@ -229,16 +231,16 @@
     <div id="gpx-panel">
         <div id="panel-header">🔽 Masquer le profil</div>
         <div id="panel-content">
-            <div class="planification-box">
-                🗓️ Départ : <input type="datetime-local" id="date-depart" class="input-date">
-            </div>
+            <!-- OPTION 1 : Tout regroupé sur une ligne horizontale compacte -->
             <div class="stats-gpx">
-                <div>📏 <span id="stat-dist">0</span> km</div>
-                <div>⛰️ <span id="stat-denivele">0</span> m</div>
-                <div>⏱️ Moy: <input type="number" id="vitesse-moyenne" class="input-vitesse" value="25" min="10" max="50"> km/h</div>
-                <button id="btn-cols" class="btn-toggle" style="border-color:#e74c3c; color:#e74c3c;">⛰️ Montées 🔽</button>
-                <button id="btn-toggle-legende" class="btn-toggle">Légende 🔽</button>
-                <button id="btn-reset-zoom" class="btn-reset">🔍 Rétablir</button>
+                <div class="stat-chip">🗓️ <input type="datetime-local" id="date-depart" class="input-date"></div>
+                <div class="stat-chip">📏 <span id="stat-dist">0</span> km • ⛰️ <span id="stat-denivele">0</span> m</div>
+                <div class="stat-chip">⏱️ <input type="number" id="vitesse-moyenne" class="input-vitesse" value="25" min="10" max="50"> km/h</div>
+                <div style="display:flex; gap:5px; align-items:center;">
+                    <button id="btn-cols" class="btn-toggle" style="border-color:#e74c3c; color:#e74c3c;">⛰️ Montées 🔽</button>
+                    <button id="btn-toggle-legende" class="btn-toggle">Légende 🔽</button>
+                    <button id="btn-reset-zoom" class="btn-reset">🔍 Rétablir</button>
+                </div>
             </div>
             
             <div id="liste-montees"></div>
