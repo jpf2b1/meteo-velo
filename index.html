@@ -106,7 +106,6 @@
         }
         .btn-theme-toggle:active { transform: scale(0.9); }
 
-        /* OPTION 1 : BARRE DE STATISTIQUES ET PLANIFICATEUR FUSIONNÉS */
         .stats-gpx { 
             display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; 
             font-weight: bold; color: var(--text-primary); margin-bottom: 6px; font-size: 12px; gap: 6px; 
@@ -231,7 +230,6 @@
     <div id="gpx-panel">
         <div id="panel-header">🔽 Masquer le profil</div>
         <div id="panel-content">
-            <!-- OPTION 1 : Tout regroupé sur une ligne horizontale compacte -->
             <div class="stats-gpx">
                 <div class="stat-chip">🗓️ <input type="datetime-local" id="date-depart" class="input-date"></div>
                 <div class="stat-chip">📏 <span id="stat-dist">0</span> km • ⛰️ <span id="stat-denivele">0</span> m</div>
@@ -263,6 +261,7 @@
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
 
         let traceGPXLayer = null, graphiqueAltitude = null;
+        let traceMonteeActive = null, marqueurSommetActif = null;
         let marqueursVentParcours = [], donneesGPX = [], pointsMeteoParcours = [], latlngsGlobaux = [];
         let marqueursDistance = []; 
         let indexPositionCycliste = null;
@@ -287,10 +286,12 @@
                 body.setAttribute('data-theme', 'light');
                 this.innerHTML = '🌙';
                 document.getElementById('meta-theme-color').setAttribute('content', '#2980b9');
+                if (traceMonteeActive) traceMonteeActive.setStyle({ color: '#3498db' });
             } else {
                 body.setAttribute('data-theme', 'dark');
                 this.innerHTML = '☀️';
                 document.getElementById('meta-theme-color').setAttribute('content', '#10ac84');
+                if (traceMonteeActive) traceMonteeActive.setStyle({ color: '#00d2d3' });
             }
             
             if (donneesGPX.length > 0 && graphiqueAltitude) {
@@ -452,7 +453,8 @@
                                 denivele: denivelePositif,
                                 pente: pente,
                                 latDebut: latlngsSource[indexDebut][0], lonDebut: latlngsSource[indexDebut][1],
-                                latSommet: latlngsSource[vraiIndexSommet][0], lonSommet: latlngsSource[vraiIndexSommet][1]
+                                latSommet: latlngsSource[vraiIndexSommet][0], lonSommet: latlngsSource[vraiIndexSommet][1],
+                                traceGeo: latlngsSource.slice(indexDebut, vraiIndexSommet + 1)
                             });
                         }
                         indexDebut = -1; altMaxLocale = -Infinity;
@@ -476,6 +478,9 @@
 
             entete.querySelector('#btn-fermer-montees').addEventListener('click', function() {
                 conteneur.style.display = 'none'; document.getElementById('btn-cols').innerText = "⛰️ Montées 🔽"; 
+                // Nettoyer la carte quand on ferme via la croix
+                if (traceMonteeActive) { map.removeLayer(traceMonteeActive); traceMonteeActive = null; }
+                if (marqueurSommetActif) { map.removeLayer(marqueurSommetActif); marqueurSommetActif = null; }
                 setTimeout(() => { if(map) map.invalidateSize(); }, 100);
             });
 
@@ -530,13 +535,41 @@
                         <div class="${classePente}">${montee.pente.toFixed(1)}%</div>
                     </div>
                 `;
+
                 div.onclick = function() {
-                    const bounds = L.latLngBounds([
-                        [montee.latDebut, montee.lonDebut],
-                        [montee.latSommet, montee.lonSommet]
-                    ]);
-                    map.fitBounds(bounds, {padding: [40, 40]});
+                    if (traceMonteeActive) map.removeLayer(traceMonteeActive);
+                    if (marqueurSommetActif) map.removeLayer(marqueurSommetActif);
+
+                    const currentTheme = document.body.getAttribute('data-theme');
+                    const colorHighlight = currentTheme === 'dark' ? '#00d2d3' : '#3498db'; 
+
+                    traceMonteeActive = L.polyline(montee.traceGeo, {
+                        color: colorHighlight,
+                        weight: 6,
+                        opacity: 1,
+                        lineCap: 'round'
+                    }).addTo(map);
+                    
+                    traceMonteeActive.bringToFront();
+
+                    marqueurSommetActif = L.marker([montee.latSommet, montee.lonSommet])
+                        .addTo(map)
+                        .bindPopup(`<div style="text-align:center; font-family:sans-serif; font-size: 13px;">
+                                        <div style="font-weight: bold; color: ${couleurBordure}; font-size: 15px; margin-bottom: 4px;">⛰️ ${montee.nom}</div>
+                                        Alt. <b>${montee.altitudeSommet} m</b><br>
+                                        +${Math.round(montee.denivele)} m sur ${montee.distance.toFixed(1)} km<br>
+                                        Pente moyenne : <b>${montee.pente.toFixed(1)}%</b>
+                                    </div>`)
+                        .openPopup();
+
+                    const hauteurPanneau = document.getElementById('gpx-panel').offsetHeight || 200;
+                    map.fitBounds(traceMonteeActive.getBounds(), {
+                        paddingTopLeft: [40, 80],
+                        paddingBottomRight: [40, hauteurPanneau + 20],
+                        maxZoom: 14
+                    });
                 };
+                
                 conteneur.appendChild(div);
             });
 
@@ -599,6 +632,8 @@
                 indexPositionCycliste = null;
                 distanceCyclisteActuelle = 0; 
                 if (marqueurPositionPointer) map.removeLayer(marqueurPositionPointer);
+                if (traceMonteeActive) { map.removeLayer(traceMonteeActive); traceMonteeActive = null; }
+                if (marqueurSommetActif) { map.removeLayer(marqueurSommetActif); marqueurSommetActif = null; }
 
                 for (let i = 0; i < trackPoints.length; i++) {
                     const lat = parseFloat(trackPoints[i].getAttribute("lat"));
@@ -746,6 +781,9 @@
                 liste.style.display = 'block'; this.innerText = "⛰️ Montées 🔼";
             } else {
                 liste.style.display = 'none'; this.innerText = "⛰️ Montées 🔽";
+                // Nettoyer la carte quand on cache la liste via le bouton de navigation
+                if (traceMonteeActive) { map.removeLayer(traceMonteeActive); traceMonteeActive = null; }
+                if (marqueurSommetActif) { map.removeLayer(marqueurSommetActif); marqueurSommetActif = null; }
             }
             setTimeout(() => { if(map) map.invalidateSize(); }, 100);
         });
