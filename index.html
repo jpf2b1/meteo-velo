@@ -915,9 +915,24 @@
 
                     pt.meteoCache = { temp, ress, probaPluie, desc: prev.weather[0].description };
 
+                    // ---- NOUVEAU CODE : Gestion du nombre de flèches ----
+                    let flechesHTML = '⬇';
+                    let taillePoliceFleche = 22;
+                    let lineSpacing = 1;
+
+                    if (vitKmh >= 30) {
+                        flechesHTML = '⬇<br>⬇<br>⬇'; // Vent violent : 3 flèches
+                        taillePoliceFleche = 14;      // On réduit la taille pour que ça rentre
+                        lineSpacing = 0.6;            // On resserre l'espacement
+                    } else if (vitKmh >= 15) {
+                        flechesHTML = '⬇<br>⬇';     // Vent modéré/fort : 2 flèches
+                        taillePoliceFleche = 18;
+                        lineSpacing = 0.8;
+                    }
+
                     const html = `
                     <div style="background: ${isDark ? 'rgba(30,30,30,0.95)' : 'rgba(255,255,255,0.95)'}; border-radius: 50%; width: 36px; height: 36px; display: flex; justify-content: center; align-items: center; box-shadow: 0 2px 5px var(--shadow); border: 3px solid ${couleurVent}; margin: 0 auto; pointer-events: none;">
-                        <div style="transform: rotate(${prev.wind.deg}deg); font-size: 22px; font-weight: bold; color: ${couleurVent};">⬇</div>
+                        <div style="transform: rotate(${prev.wind.deg}deg); font-size: ${taillePoliceFleche}px; line-height: ${lineSpacing}; font-weight: bold; color: ${couleurVent}; text-align: center; display: flex; flex-direction: column; justify-content: center;">${flechesHTML}</div>
                     </div>
                     <div style="${isDarkStyling} border-radius: 4px; font-size: 11px; font-weight: bold; text-align: center; box-shadow: 0 1px 3px var(--shadow); margin-top: 4px; width: 72px; margin-left: -18px; padding: 3px 0; pointer-events: none; line-height: 1.3;">
                         ${iconePrefixe}${vitKmh} km/h<br>${textePluie}<span style="color: var(--text-secondary); font-size: 9px;">🕒 ${hTexte}</span>
