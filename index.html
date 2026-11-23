@@ -298,23 +298,20 @@
             } catch (e) { return null; }
         }
 
-        // Vérification au démarrage : Y a-t-il une trace en historique ou partagée ?
         window.addEventListener('load', async () => {
-            if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+            if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js');
             
             const gpxHistorique = await chargerDernierGPX();
             if (gpxHistorique) {
                 document.getElementById('btn-reload').style.display = 'flex';
                 
-                // Si l'application a été ouverte via le menu "Partager"
                 if (window.location.search.includes('shared=true')) {
-                    window.history.replaceState({}, document.title, "/"); // Nettoie l'URL
-                    traiterGPX(gpxHistorique); // Charge directement
+                    window.history.replaceState({}, document.title, "./"); 
+                    traiterGPX(gpxHistorique); 
                 }
             }
         });
 
-        // Bouton pour recharger l'historique
         document.getElementById('btn-reload').addEventListener('click', async function() {
             this.innerText = "⏳...";
             const gpxHistorique = await chargerDernierGPX();
@@ -322,16 +319,15 @@
             this.innerHTML = "🔄 Historique";
         });
 
-        // Bouton pour charger un nouveau fichier manuel
         document.getElementById('gpx-input').addEventListener('change', function(e) {
             const file = e.target.files[0];
             if (!file) return;
             const reader = new FileReader();
             reader.onload = async function(evt) {
                 const xmlString = evt.target.result;
-                await sauvegarderGPXLocal(xmlString); // Sauvegarde automatique
+                await sauvegarderGPXLocal(xmlString); 
                 document.getElementById('btn-reload').style.display = 'flex';
-                traiterGPX(xmlString); // Traitement
+                traiterGPX(xmlString); 
             };
             reader.readAsText(file);
         });
@@ -670,7 +666,7 @@
             }
         }
 
-        // ---------- FONCTION PRINCIPALE DE LECTURE DU GPX (Isolée pour être réutilisable) ----------
+        // ---------- FONCTION PRINCIPALE DE LECTURE DU GPX ----------
         function traiterGPX(xmlTexte) {
             sessionChargementId++;
             const currentSession = sessionChargementId;
@@ -826,7 +822,6 @@
                 afficherMonteesEtNoms(ascensionsDetectees, distanceTotale, listeWaypoints, currentSession);
             }
         }
-        // -------------------------------------------------------------------------------------------
 
         document.getElementById('panel-header').addEventListener('click', function() {
             const content = document.getElementById('panel-content');

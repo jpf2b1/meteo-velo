@@ -9,8 +9,8 @@ self.addEventListener('activate', event => {
 });
 
 self.addEventListener('fetch', event => {
-    // Interception du fichier envoyé via le menu "Partager" du téléphone
-    if (event.request.method === 'POST' && event.request.url.endsWith('/share-target')) {
+    // Interception du fichier envoyé via le menu "Partager" de Komoot / Fichiers
+    if (event.request.method === 'POST' && event.request.url.includes('share-target')) {
         event.respondWith((async () => {
             try {
                 const formData = await event.request.formData();
@@ -32,15 +32,14 @@ self.addEventListener('fetch', event => {
                         request.onerror = reject;
                     });
                 }
-                // Redirection vers l'appli en lui signalant qu'un fichier partagé est prêt
-                return Response.redirect('/?shared=true', 303);
+                // Redirection relative vers l'appli pour éviter l'erreur 404
+                return Response.redirect('./?shared=true', 303);
             } catch (error) {
                 console.error("Erreur lors de la réception du fichier partagé :", error);
-                return Response.redirect('/', 303);
+                return Response.redirect('./', 303);
             }
         })());
     } else {
-        // Comportement classique pour les autres requêtes (pas de cache forcé ici pour simplifier)
         event.respondWith(fetch(event.request));
     }
 });
