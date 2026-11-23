@@ -83,13 +83,13 @@
         
         .top-controls { 
             position: absolute; top: 15px; left: 50%; transform: translateX(-50%); 
-            z-index: 1000; display: flex; gap: 10px; width: 92%; max-width: 420px; 
+            z-index: 1000; display: flex; gap: 8px; width: 96%; max-width: 450px; 
         }
         .btn-action { 
-            flex: 1; background-color: var(--btn-bg); color: var(--btn-text); border: 1px solid var(--border-panel); padding: 12px 5px; 
-            border-radius: 20px; font-size: 14px; font-weight: bold; cursor: pointer; 
-            box-shadow: 0 4px 12px var(--shadow); text-align: center; 
-            display: flex; justify-content: center; align-items: center; gap: 6px;
+            flex: 1; background-color: var(--btn-bg); color: var(--btn-text); border: 1px solid var(--border-panel); padding: 12px 2px; 
+            border-radius: 20px; font-size: 13px; font-weight: bold; cursor: pointer; 
+            box-shadow: 0 4px 12px var(--shadow); text-align: center; white-space: nowrap;
+            display: flex; justify-content: center; align-items: center; gap: 4px;
             transition: background-color 0.3s, color 0.3s, border-color 0.3s, transform 0.1s;
             backdrop-filter: blur(8px);
         }
@@ -201,8 +201,9 @@
 <body data-theme="light"> 
 
     <div class="top-controls">
-        <label class="btn-action">📂 Charger GPX<input type="file" id="gpx-input" accept=".gpx" style="display:none;"></label>
-        <button id="btn-gps" class="btn-action">📍 Ma Position</button>
+        <label class="btn-action">📂 Nouveau<input type="file" id="gpx-input" accept=".gpx" style="display:none;"></label>
+        <button id="btn-reload" class="btn-action" style="display: none; background-color: #27ae60; border-color: #27ae60;">🔄 Historique</button>
+        <button id="btn-gps" class="btn-action">📍 GPS</button>
     </div>
 
     <button id="theme-toggle" class="btn-theme-toggle" title="Changer de thème">🌙</button>
@@ -268,6 +269,73 @@
         let distanceCyclisteActuelle = 0; 
         let marqueurPositionPointer = null;
         let sessionChargementId = 0;
+
+        // ------------- GESTION DE LA BASE DE DONNÉES LOCALE (IndexedDB) -------------
+        const dbPromise = new Promise((resolve, reject) => {
+            const request = indexedDB.open('MeteoVeloDB', 1);
+            request.onupgradeneeded = (e) => { e.target.result.createObjectStore('gpxStore'); };
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+
+        async function sauvegarderGPXLocal(xmlString) {
+            try {
+                const db = await dbPromise;
+                const tx = db.transaction('gpxStore', 'readwrite');
+                tx.objectStore('gpxStore').put(xmlString, 'last_gpx');
+            } catch (e) { console.error("Erreur de sauvegarde locale", e); }
+        }
+
+        async function chargerDernierGPX() {
+            try {
+                const db = await dbPromise;
+                return new Promise((resolve) => {
+                    const tx = db.transaction('gpxStore', 'readonly');
+                    const req = tx.objectStore('gpxStore').get('last_gpx');
+                    req.onsuccess = () => resolve(req.result);
+                    req.onerror = () => resolve(null);
+                });
+            } catch (e) { return null; }
+        }
+
+        // Vérification au démarrage : Y a-t-il une trace en historique ou partagée ?
+        window.addEventListener('load', async () => {
+            if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+            
+            const gpxHistorique = await chargerDernierGPX();
+            if (gpxHistorique) {
+                document.getElementById('btn-reload').style.display = 'flex';
+                
+                // Si l'application a été ouverte via le menu "Partager"
+                if (window.location.search.includes('shared=true')) {
+                    window.history.replaceState({}, document.title, "/"); // Nettoie l'URL
+                    traiterGPX(gpxHistorique); // Charge directement
+                }
+            }
+        });
+
+        // Bouton pour recharger l'historique
+        document.getElementById('btn-reload').addEventListener('click', async function() {
+            this.innerText = "⏳...";
+            const gpxHistorique = await chargerDernierGPX();
+            if (gpxHistorique) traiterGPX(gpxHistorique);
+            this.innerHTML = "🔄 Historique";
+        });
+
+        // Bouton pour charger un nouveau fichier manuel
+        document.getElementById('gpx-input').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = async function(evt) {
+                const xmlString = evt.target.result;
+                await sauvegarderGPXLocal(xmlString); // Sauvegarde automatique
+                document.getElementById('btn-reload').style.display = 'flex';
+                traiterGPX(xmlString); // Traitement
+            };
+            reader.readAsText(file);
+        });
+        // -----------------------------------------------------------------------------
 
         function initDateDepart() {
             const dateInput = document.getElementById('date-depart');
@@ -478,7 +546,6 @@
 
             entete.querySelector('#btn-fermer-montees').addEventListener('click', function() {
                 conteneur.style.display = 'none'; document.getElementById('btn-cols').innerText = "⛰️ Montées 🔽"; 
-                // Nettoyer la carte quand on ferme via la croix
                 if (traceMonteeActive) { map.removeLayer(traceMonteeActive); traceMonteeActive = null; }
                 if (marqueurSommetActif) { map.removeLayer(marqueurSommetActif); marqueurSommetActif = null; }
                 setTimeout(() => { if(map) map.invalidateSize(); }, 100);
@@ -603,167 +670,163 @@
             }
         }
 
-        document.getElementById('gpx-input').addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (!file) return;
+        // ---------- FONCTION PRINCIPALE DE LECTURE DU GPX (Isolée pour être réutilisable) ----------
+        function traiterGPX(xmlTexte) {
             sessionChargementId++;
             const currentSession = sessionChargementId;
-            const reader = new FileReader();
             
-            reader.onload = function(evt) {
-                const xmlDoc = new DOMParser().parseFromString(evt.target.result, "text/xml");
-                const trackPoints = xmlDoc.getElementsByTagName("trkpt");
-                const waypointsNodes = xmlDoc.getElementsByTagName("wpt");
-                
-                let listeWaypoints = [];
-                for (let i = 0; i < waypointsNodes.length; i++) {
-                    let wLat = parseFloat(waypointsNodes[i].getAttribute("lat"));
-                    let wLon = parseFloat(waypointsNodes[i].getAttribute("lon"));
-                    let nameNode = waypointsNodes[i].getElementsByTagName("name")[0];
-                    if (nameNode) {
-                        listeWaypoints.push({ lat: wLat, lon: wLon, name: nameNode.textContent });
-                    }
+            const xmlDoc = new DOMParser().parseFromString(xmlTexte, "text/xml");
+            const trackPoints = xmlDoc.getElementsByTagName("trkpt");
+            const waypointsNodes = xmlDoc.getElementsByTagName("wpt");
+            
+            let listeWaypoints = [];
+            for (let i = 0; i < waypointsNodes.length; i++) {
+                let wLat = parseFloat(waypointsNodes[i].getAttribute("lat"));
+                let wLon = parseFloat(waypointsNodes[i].getAttribute("lon"));
+                let nameNode = waypointsNodes[i].getElementsByTagName("name")[0];
+                if (nameNode) {
+                    listeWaypoints.push({ lat: wLat, lon: wLon, name: nameNode.textContent });
+                }
+            }
+            
+            let latlngs = [], labelsDistance = [], dataAltitude = [], rawDistances = [];
+            let distanceTotale = 0, denivelePositif = 0, derniereLat = null, derniereLon = null, derniereEle = null;
+            pointsMeteoParcours = []; donneesGPX = [];
+            
+            indexPositionCycliste = null;
+            distanceCyclisteActuelle = 0; 
+            if (marqueurPositionPointer) map.removeLayer(marqueurPositionPointer);
+            if (traceMonteeActive) { map.removeLayer(traceMonteeActive); traceMonteeActive = null; }
+            if (marqueurSommetActif) { map.removeLayer(marqueurSommetActif); marqueurSommetActif = null; }
+
+            for (let i = 0; i < trackPoints.length; i++) {
+                const lat = parseFloat(trackPoints[i].getAttribute("lat"));
+                const lon = parseFloat(trackPoints[i].getAttribute("lon"));
+                const eleNode = trackPoints[i].getElementsByTagName("ele")[0];
+                const ele = eleNode ? parseFloat(eleNode.textContent) : 0; 
+                latlngs.push([lat, lon]);
+
+                if (derniereLat !== null) {
+                    const dist = calculerDistance(derniereLat, derniereLon, lat, lon);
+                    distanceTotale += dist;
+                    if (ele > derniereEle) denivelePositif += (ele - derniereEle); 
                 }
                 
-                let latlngs = [], labelsDistance = [], dataAltitude = [], rawDistances = [];
-                let distanceTotale = 0, denivelePositif = 0, derniereLat = null, derniereLon = null, derniereEle = null;
-                pointsMeteoParcours = []; donneesGPX = [];
+                donneesGPX.push({ lat: lat, lon: lon, distance: distanceTotale });
+                labelsDistance.push(distanceTotale.toFixed(1));
+                dataAltitude.push(ele);
+                rawDistances.push(distanceTotale); 
+                derniereLat = lat; derniereLon = lon; derniereEle = ele;
+            }
+
+            if (latlngs.length > 0) {
+                const maxPointsVisuels = 1500;
+                const pas = Math.max(1, Math.floor(latlngs.length / maxPointsVisuels));
                 
-                indexPositionCycliste = null;
-                distanceCyclisteActuelle = 0; 
-                if (marqueurPositionPointer) map.removeLayer(marqueurPositionPointer);
-                if (traceMonteeActive) { map.removeLayer(traceMonteeActive); traceMonteeActive = null; }
-                if (marqueurSommetActif) { map.removeLayer(marqueurSommetActif); marqueurSommetActif = null; }
+                const latlngsOptimises = [];
+                const labelsOptimises = [];
+                const altitudeOptimisee = [];
+                const distancesOptimisees = [];
+                const donneesGPXOptimisees = [];
 
-                for (let i = 0; i < trackPoints.length; i++) {
-                    const lat = parseFloat(trackPoints[i].getAttribute("lat"));
-                    const lon = parseFloat(trackPoints[i].getAttribute("lon"));
-                    const eleNode = trackPoints[i].getElementsByTagName("ele")[0];
-                    const ele = eleNode ? parseFloat(eleNode.textContent) : 0; 
-                    latlngs.push([lat, lon]);
-
-                    if (derniereLat !== null) {
-                        const dist = calculerDistance(derniereLat, derniereLon, lat, lon);
-                        distanceTotale += dist;
-                        if (ele > derniereEle) denivelePositif += (ele - derniereEle); 
-                    }
-                    
-                    donneesGPX.push({ lat: lat, lon: lon, distance: distanceTotale });
-                    labelsDistance.push(distanceTotale.toFixed(1));
-                    dataAltitude.push(ele);
-                    rawDistances.push(distanceTotale); 
-                    derniereLat = lat; derniereLon = lon; derniereEle = ele;
+                for (let i = 0; i < latlngs.length; i += pas) {
+                    latlngsOptimises.push(latlngs[i]);
+                    labelsOptimises.push(labelsDistance[i]);
+                    altitudeOptimisee.push(dataAltitude[i]);
+                    distancesOptimisees.push(rawDistances[i]);
+                    donneesGPXOptimisees.push(donneesGPX[i]);
+                }
+                if ((latlngs.length - 1) % pas !== 0) {
+                    const last = latlngs.length - 1;
+                    latlngsOptimises.push(latlngs[last]);
+                    labelsOptimises.push(labelsDistance[last]);
+                    altitudeOptimisee.push(dataAltitude[last]);
+                    distancesOptimisees.push(rawDistances[last]);
+                    donneesGPXOptimisees.push(donneesGPX[last]);
                 }
 
-                if (latlngs.length > 0) {
-                    const maxPointsVisuels = 1500;
-                    const pas = Math.max(1, Math.floor(latlngs.length / maxPointsVisuels));
-                    
-                    const latlngsOptimises = [];
-                    const labelsOptimises = [];
-                    const altitudeOptimisee = [];
-                    const distancesOptimisees = [];
-                    const donneesGPXOptimisees = [];
+                donneesGPX = donneesGPXOptimisees;
+                latlngsGlobaux = latlngsOptimises;
 
-                    for (let i = 0; i < latlngs.length; i += pas) {
-                        latlngsOptimises.push(latlngs[i]);
-                        labelsOptimises.push(labelsDistance[i]);
-                        altitudeOptimisee.push(dataAltitude[i]);
-                        distancesOptimisees.push(rawDistances[i]);
-                        donneesGPXOptimisees.push(donneesGPX[i]);
+                const ascensionsDetectees = analyserAscensions(dataAltitude, rawDistances, latlngs);
+                const seuilDeniveleMeteo = distanceTotale < 100 ? 80 : 150;
+                const grandsSommets = ascensionsDetectees.filter(m => m.denivele >= seuilDeniveleMeteo);
+
+                let intervalleMeteo = distanceTotale < 30 ? 5 : distanceTotale < 60 ? 10 : distanceTotale < 100 ? 15 : distanceTotale < 200 ? 20 : distanceTotale < 400 ? 30 : 50;
+                let pointsStandards = [];
+                let prochainPalierMeteo = intervalleMeteo;
+                for (let i = 0; i < donneesGPX.length; i++) {
+                    if (donneesGPX[i].distance >= prochainPalierMeteo) {
+                        pointsStandards.push({ lat: donneesGPX[i].lat, lon: donneesGPX[i].lon, km: prochainPalierMeteo, estArrivee: false, estSommet: false });
+                        prochainPalierMeteo += intervalleMeteo;
                     }
-                    if ((latlngs.length - 1) % pas !== 0) {
-                        const last = latlngs.length - 1;
-                        latlngsOptimises.push(latlngs[last]);
-                        labelsOptimises.push(labelsDistance[last]);
-                        altitudeOptimisee.push(dataAltitude[last]);
-                        distancesOptimisees.push(rawDistances[last]);
-                        donneesGPXOptimisees.push(donneesGPX[last]);
-                    }
-
-                    donneesGPX = donneesGPXOptimisees;
-                    latlngsGlobaux = latlngsOptimises;
-
-                    const ascensionsDetectees = analyserAscensions(dataAltitude, rawDistances, latlngs);
-                    const seuilDeniveleMeteo = distanceTotale < 100 ? 80 : 150;
-                    const grandsSommets = ascensionsDetectees.filter(m => m.denivele >= seuilDeniveleMeteo);
-
-                    let intervalleMeteo = distanceTotale < 30 ? 5 : distanceTotale < 60 ? 10 : distanceTotale < 100 ? 15 : distanceTotale < 200 ? 20 : distanceTotale < 400 ? 30 : 50;
-                    let pointsStandards = [];
-                    let prochainPalierMeteo = intervalleMeteo;
-                    for (let i = 0; i < donneesGPX.length; i++) {
-                        if (donneesGPX[i].distance >= prochainPalierMeteo) {
-                            pointsStandards.push({ lat: donneesGPX[i].lat, lon: donneesGPX[i].lon, km: prochainPalierMeteo, estArrivee: false, estSommet: false });
-                            prochainPalierMeteo += intervalleMeteo;
-                        }
-                    }
-
-                    if (pointsStandards.length > 0 && (distanceTotale - pointsStandards[pointsStandards.length - 1].km < (intervalleMeteo * 0.2))) {
-                        pointsStandards.pop();
-                    }
-
-                    pointsMeteoParcours = pointsStandards.filter(pt => {
-                        const tropProcheSommet = grandsSommets.some(s => Math.abs(s.kmSommet - pt.km) < 3.0);
-                        const tropProcheArrivee = (distanceTotale - pt.km) < 2.0;
-                        return !tropProcheSommet && !tropProcheArrivee;
-                    });
-
-                    grandsSommets.forEach((s) => {
-                        if (distanceTotale - s.kmSommet >= 1.5) {
-                            pointsMeteoParcours.push({
-                                lat: s.latSommet,
-                                lon: s.lonSommet,
-                                km: parseFloat(s.kmSommet.toFixed(1)),
-                                estArrivee: false,
-                                estSommet: true,
-                                nomSommet: s.nom || `Sommet (${s.altitudeSommet} m)`
-                            });
-                        }
-                    });
-
-                    pointsMeteoParcours.push({ lat: derniereLat, lon: derniereLon, km: parseFloat(distanceTotale.toFixed(1)), estArrivee: true, estSommet: false });
-                    pointsMeteoParcours.sort((a, b) => a.km - b.km);
-
-                    if (traceGPXLayer) map.removeLayer(traceGPXLayer);
-                    
-                    const isDark = document.body.getAttribute('data-theme') === 'dark';
-                    const routeColor = isDark ? '#ff4757' : 'red'; 
-                    
-                    traceGPXLayer = L.polyline(latlngsOptimises, {color: routeColor, weight: 4}).addTo(map);
-                    map.fitBounds(traceGPXLayer.getBounds());
-
-                    marqueursDistance.forEach(m => map.removeLayer(m));
-                    marqueursDistance = [];
-
-                    let intervalleKm = distanceTotale < 15 ? 1 : distanceTotale < 50 ? 5 : distanceTotale < 100 ? 10 : distanceTotale < 300 ? 20 : 50;
-
-                    let prochainKm = intervalleKm;
-                    for (let i = 0; i < donneesGPX.length; i++) {
-                        if (donneesGPX[i].distance >= prochainKm) {
-                            if (distanceTotale - prochainKm > (intervalleKm * 0.2)) {
-                                let iconeKm = L.divIcon({ html: `<div class="km-marker">${prochainKm}</div>`, className: '', iconSize: [22, 22], iconAnchor: [11, 11] });
-                                let marqueurKm = L.marker([donneesGPX[i].lat, donneesGPX[i].lon], {icon: iconeKm, interactive: false}).addTo(map);
-                                marqueursDistance.push(marqueurKm);
-                            }
-                            prochainKm += intervalleKm;
-                        }
-                    }
-
-                    document.getElementById('panel-content').style.display = 'block';
-                    document.getElementById('panel-header').innerHTML = '🔽 Masquer le profil';
-                    
-                    document.getElementById('stat-dist').innerText = distanceTotale.toFixed(1);
-                    document.getElementById('stat-denivele').innerText = Math.round(denivelePositif);
-                    document.getElementById('gpx-panel').style.display = 'block';
-                    setTimeout(() => map.invalidateSize(), 300); 
-
-                    genererGraphique(labelsOptimises, altitudeOptimisee, distancesOptimisees);
-                    ajouterVentSurParcours(pointsMeteoParcours);
-                    afficherMonteesEtNoms(ascensionsDetectees, distanceTotale, listeWaypoints, currentSession);
                 }
-            };
-            reader.readAsText(file);
-        });
+
+                if (pointsStandards.length > 0 && (distanceTotale - pointsStandards[pointsStandards.length - 1].km < (intervalleMeteo * 0.2))) {
+                    pointsStandards.pop();
+                }
+
+                pointsMeteoParcours = pointsStandards.filter(pt => {
+                    const tropProcheSommet = grandsSommets.some(s => Math.abs(s.kmSommet - pt.km) < 3.0);
+                    const tropProcheArrivee = (distanceTotale - pt.km) < 2.0;
+                    return !tropProcheSommet && !tropProcheArrivee;
+                });
+
+                grandsSommets.forEach((s) => {
+                    if (distanceTotale - s.kmSommet >= 1.5) {
+                        pointsMeteoParcours.push({
+                            lat: s.latSommet,
+                            lon: s.lonSommet,
+                            km: parseFloat(s.kmSommet.toFixed(1)),
+                            estArrivee: false,
+                            estSommet: true,
+                            nomSommet: s.nom || `Sommet (${s.altitudeSommet} m)`
+                        });
+                    }
+                });
+
+                pointsMeteoParcours.push({ lat: derniereLat, lon: derniereLon, km: parseFloat(distanceTotale.toFixed(1)), estArrivee: true, estSommet: false });
+                pointsMeteoParcours.sort((a, b) => a.km - b.km);
+
+                if (traceGPXLayer) map.removeLayer(traceGPXLayer);
+                
+                const isDark = document.body.getAttribute('data-theme') === 'dark';
+                const routeColor = isDark ? '#ff4757' : 'red'; 
+                
+                traceGPXLayer = L.polyline(latlngsOptimises, {color: routeColor, weight: 4}).addTo(map);
+                map.fitBounds(traceGPXLayer.getBounds());
+
+                marqueursDistance.forEach(m => map.removeLayer(m));
+                marqueursDistance = [];
+
+                let intervalleKm = distanceTotale < 15 ? 1 : distanceTotale < 50 ? 5 : distanceTotale < 100 ? 10 : distanceTotale < 300 ? 20 : 50;
+
+                let prochainKm = intervalleKm;
+                for (let i = 0; i < donneesGPX.length; i++) {
+                    if (donneesGPX[i].distance >= prochainKm) {
+                        if (distanceTotale - prochainKm > (intervalleKm * 0.2)) {
+                            let iconeKm = L.divIcon({ html: `<div class="km-marker">${prochainKm}</div>`, className: '', iconSize: [22, 22], iconAnchor: [11, 11] });
+                            let marqueurKm = L.marker([donneesGPX[i].lat, donneesGPX[i].lon], {icon: iconeKm, interactive: false}).addTo(map);
+                            marqueursDistance.push(marqueurKm);
+                        }
+                        prochainKm += intervalleKm;
+                    }
+                }
+
+                document.getElementById('panel-content').style.display = 'block';
+                document.getElementById('panel-header').innerHTML = '🔽 Masquer le profil';
+                
+                document.getElementById('stat-dist').innerText = distanceTotale.toFixed(1);
+                document.getElementById('stat-denivele').innerText = Math.round(denivelePositif);
+                document.getElementById('gpx-panel').style.display = 'block';
+                setTimeout(() => map.invalidateSize(), 300); 
+
+                genererGraphique(labelsOptimises, altitudeOptimisee, distancesOptimisees);
+                ajouterVentSurParcours(pointsMeteoParcours);
+                afficherMonteesEtNoms(ascensionsDetectees, distanceTotale, listeWaypoints, currentSession);
+            }
+        }
+        // -------------------------------------------------------------------------------------------
 
         document.getElementById('panel-header').addEventListener('click', function() {
             const content = document.getElementById('panel-content');
@@ -781,7 +844,6 @@
                 liste.style.display = 'block'; this.innerText = "⛰️ Montées 🔼";
             } else {
                 liste.style.display = 'none'; this.innerText = "⛰️ Montées 🔽";
-                // Nettoyer la carte quand on cache la liste via le bouton de navigation
                 if (traceMonteeActive) { map.removeLayer(traceMonteeActive); traceMonteeActive = null; }
                 if (marqueurSommetActif) { map.removeLayer(marqueurSommetActif); marqueurSommetActif = null; }
             }
@@ -993,8 +1055,6 @@
                 });
             }
         });
-        
-        if ('serviceWorker' in navigator) { window.addEventListener('load', () => navigator.serviceWorker.register('sw.js')); }
     </script>
 </body>
 </html>
