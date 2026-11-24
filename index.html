@@ -257,7 +257,7 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     
     <script>
-        const cleAPI = 'd987d1ede347de41baa4bbd51ac41450'; 
+        const urlRelaisMeteo = 'https://meteo-velo-relais.jpf2b1.workers.dev';
         const map = L.map('map', {zoomControl: false}).setView([46.603354, 1.888334], 6);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
 
@@ -887,7 +887,7 @@
                 }
 
                 const hArrivee = tempsDepart + (pt.km / vitMoy) * 3600;
-                fetch(`https://api.openweathermap.org/data/2.5/forecast?lat=${pt.lat}&lon=${pt.lon}&appid=${cleAPI}&units=metric&lang=fr`)
+                fetch(`${urlRelaisMeteo}/?lat=${pt.lat}&lon=${pt.lon}&type=forecast`)
                 .then(r => r.json()).then(data => {
                     let prev = data.list[0], diffMini = Math.abs(prev.dt - hArrivee);
                     for(let i = 1; i < data.list.length; i++) {
@@ -1047,7 +1047,7 @@
                         }
                     }
 
-                    fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${cleAPI}&units=metric&lang=fr`)
+                    fetch(`${urlRelaisMeteo}/?lat=${lat}&lon=${lon}&type=weather`)
                     .then(r => r.json()).then(data => {
                         document.getElementById('ville').innerText = data.name;
                         document.getElementById('temperature').innerText = Math.round(data.main.temp);
