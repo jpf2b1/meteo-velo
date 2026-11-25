@@ -315,7 +315,7 @@
         let marqueurPositionPointer = null;
         let sessionChargementId = 0;
         let modeActuel = 'velo';
-        let sunsetUnixConnu = null;
+        let sunsetUnixTrail = null;
         let statsTrailCourantes = {
             distanceKm: 0,
             denivelePositifM: 0,
@@ -420,7 +420,7 @@
             }
         });
 
-        // ------------- MODE VÉLO / TRAIL, TA & ALERTE LAMPE FRONTALE -------------
+        // ------------- MODE VÉLO / TRAIL, TA & ALERTE LAMPE FRONTALE (TRAIL UNIQUEMENT) -------------
         function formaterTA(minutes) {
             const totalMins = Math.max(0, Math.round(minutes));
             const h = Math.floor(totalMins / 60);
@@ -477,6 +477,22 @@
             return statsTrailCourantes.cumulKmEffortParPoint[meilleurIdx] ?? kmCible;
         }
 
+        function recupererCoucherSoleilTrailSiBesoin() {
+            if (modeActuel !== 'trail' || sunsetUnixTrail || !latlngsGlobaux.length) {
+                return;
+            }
+            const [lat, lon] = latlngsGlobaux[0];
+            fetch(`${urlRelaisMeteo}/?lat=${lat}&lon=${lon}&type=weather`)
+                .then(r => r.json())
+                .then(data => {
+                    if (modeActuel === 'trail' && data?.sys?.sunset) {
+                        sunsetUnixTrail = data.sys.sunset;
+                        mettreAJourAffichageMode();
+                    }
+                })
+                .catch(() => {});
+        }
+
         function mettreAJourAffichageMode() {
             const estTrail = modeActuel === 'trail';
             document.body.setAttribute('data-mode', modeActuel);
@@ -490,12 +506,13 @@
 
             if (!estTrail) {
                 banner.style.display = 'none';
+                banner.innerHTML = '';
                 return;
             }
 
             banner.style.display = 'block';
             if (!donneesGPX.length) {
-                banner.textContent = '🏃 Mode Trail actif : chargez un fichier GPX pour calculer le Temps Alloué (TA).';
+                banner.textContent = '🏃 Mode Trail actif : chargez un fichier GPX pour calculer le Temps Alloué (TA) et vérifier le coucher du soleil.';
                 return;
             }
 
@@ -512,17 +529,17 @@
                 : '--:--';
 
             let blocNuitHtml = '';
-            if (sunsetUnixConnu && heureArriveeSec != null) {
-                const sunsetDate = new Date(sunsetUnixConnu * 1000);
+            if (sunsetUnixTrail && heureArriveeSec != null) {
+                const sunsetDate = new Date(sunsetUnixTrail * 1000);
                 const sunsetFmt = sunsetDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
                 const margeAvantNuitSec = 30 * 60;
-                const alerteLampe = heureArriveeSec >= sunsetUnixConnu - margeAvantNuitSec;
+                const alerteLampe = heureArriveeSec >= sunsetUnixTrail - margeAvantNuitSec;
 
                 if (alerteLampe) {
                     banner.classList.add('alerte-nuit');
-                    blocNuitHtml = `<br><span class="alerte-lampe">🔦 Lampe frontale recommandée : arrivée vers ${heureArriveeTxt}, coucher du soleil à ${sunsetFmt}.</span>`;
+                    blocNuitHtml = `<br><span class="alerte-lampe">🔦 Lampe frontale à prévoir : arrivée vers ${heureArriveeTxt}, coucher du soleil à ${sunsetFmt}.</span>`;
                 } else {
-                    blocNuitHtml = `<br><span style="color: var(--text-secondary);">🌅 Coucher du soleil à ${sunsetFmt} (fin prévue de jour).</span>`;
+                    blocNuitHtml = `<br><span style="color: var(--text-secondary);">🌅 Coucher du soleil à ${sunsetFmt} (arrivée estimée de jour).</span>`;
                 }
             }
 
@@ -546,6 +563,7 @@
             if (modeActuel === 'trail') return;
             modeActuel = 'trail';
             mettreAJourAffichageMode();
+            recupererCoucherSoleilTrailSiBesoin();
             if (pointsMeteoParcours.length > 0) ajouterVentSurParcours(pointsMeteoParcours);
         });
 
@@ -555,7 +573,7 @@
                 ajouterVentSurParcours(pointsMeteoParcours);
             }
         });
-        // ------------------------------------------------------------------------
+        // ---------------------------------------------------------------------------------------
 
         function calculerDistance(lat1, lon1, lat2, lon2) {
             const R = 6371, dLat = (lat2 - lat1) * Math.PI / 180, dLon = (lon2 - lon1) * Math.PI / 180;
@@ -861,6 +879,7 @@
         function traiterGPX(xmlTexte) {
             sessionChargementId++;
             const currentSession = sessionChargementId;
+            sunsetUnixTrail = null;
             
             const xmlDoc = new DOMParser().parseFromString(xmlTexte, "text/xml");
             const trackPoints = xmlDoc.getElementsByTagName("trkpt");
@@ -1010,20 +1029,9 @@
 
                 genererGraphique(labelsOptimises, altitudeOptimisee, distancesOptimisees);
                 mettreAJourAffichageMode();
+                recupererCoucherSoleilTrailSiBesoin();
                 ajouterVentSurParcours(pointsMeteoParcours);
                 afficherMonteesEtNoms(ascensionsDetectees, distanceTotale, listeWaypoints, currentSession);
-
-                if (latlngsOptimises.length > 0 && !sunsetUnixConnu) {
-                    fetch(`${urlRelaisMeteo}/?lat=${latlngsOptimises[0][0]}&lon=${latlngsOptimises[0][1]}&type=weather`)
-                        .then(r => r.json())
-                        .then(data => {
-                            if (data?.sys?.sunset) {
-                                sunsetUnixConnu = data.sys.sunset;
-                                mettreAJourAffichageMode();
-                            }
-                        })
-                        .catch(() => {});
-                }
             }
         }
 
@@ -1259,8 +1267,8 @@
 
                     fetch(`${urlRelaisMeteo}/?lat=${lat}&lon=${lon}&type=weather`)
                     .then(r => r.json()).then(data => {
-                        if (data?.sys?.sunset) {
-                            sunsetUnixConnu = data.sys.sunset;
+                        if (modeActuel === 'trail' && data?.sys?.sunset) {
+                            sunsetUnixTrail = data.sys.sunset;
                             mettreAJourAffichageMode();
                         }
                         document.getElementById('ville').innerText = data.name;
