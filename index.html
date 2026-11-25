@@ -212,7 +212,7 @@
         .desc { font-size: 16px; text-transform: capitalize; color: var(--text-primary); font-weight: 500; margin-bottom: 10px; }
         .vent-box { background: var(--box-vent); border-radius: 12px; padding: 10px; display: flex; justify-content: space-around; align-items: center; font-size: 14px; color: var(--text-primary); font-weight: 600; }
         .fleche-vent { display: inline-block; font-size: 20px; transition: transform 0.5s ease; }
-        .erreur { color: #d32f2f; font-weight: bold; margin-top: 5px; font-size: 13px;}
+        .erreur { color: #d32f2f; font-weight: bold; margin-top: 8px; font-size: 13px;}
         
         .leaflet-div-icon { background: transparent; border: none; }
         .leaflet-popup-content { margin: 10px !important; }
@@ -614,7 +614,10 @@
             }
             const [lat, lon] = latlngsGlobaux[0];
             fetch(`${urlRelaisMeteo}/?lat=${lat}&lon=${lon}&type=weather`)
-                .then(r => r.json())
+                .then(async (r) => {
+                    if (!r.ok) return null;
+                    return r.json().catch(() => null);
+                })
                 .then(data => {
                     if (modeActuel === 'trail' && data?.sys?.sunset) {
                         sunsetUnixTrail = data.sys.sunset;
@@ -1042,9 +1045,9 @@
                 if (derniereLat !== null) {
                     const dist = calculerDistance(derniereLat, derniereLon, lat, lon);
                     distanceTotale += dist;
-                    if (ele > derniereEle) denivelePositif += (ele - derniereEle); 
                     const diffEle = ele - derniereEle;
                     const dPlusFiltre = diffEle >= 2 ? diffEle : 0;
+                    denivelePositif += dPlusFiltre;
                     cumulEffort += dist + dPlusFiltre / 100;
                 }
                 
@@ -1212,11 +1215,20 @@
                     return; 
                 }
 
+                const effortCible = typeof pt.effortKm === 'number'
+                    ? pt.effortKm
+                    : estimerKmEffortPourDistance(pt.km);
                 const hArrivee = estTrail
-                    ? tempsDepart + estimerKmEffortPourDistance(pt.km) * allureTrail * 60
+                    ? tempsDepart + effortCible * allureTrail * 60
                     : tempsDepart + (pt.km / vitMoy) * 3600;
+
                 fetch(`${urlRelaisMeteo}/?lat=${pt.lat}&lon=${pt.lon}&type=forecast`)
-                .then(r => r.json()).then(data => {
+                .then(async (r) => {
+                    const data = await r.json().catch(() => null);
+                    if (!r.ok || !data || !Array.isArray(data.list) || data.list.length === 0) {
+                        return;
+                    }
+
                     let prev = data.list[0], diffMini = Math.abs(prev.dt - hArrivee);
                     for(let i = 1; i < data.list.length; i++) {
                         let diff = Math.abs(data.list[i].dt - hArrivee);
@@ -1227,7 +1239,7 @@
                     let prefix = (dateArr.getDate() !== new Date().getDate()) ? ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'][dateArr.getDay()] + " " : "";
                     const hTexte = prefix + dateArr.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
                     
-                    const vitKmh = Math.round(prev.wind.speed * 3.6), temp = Math.round(prev.main.temp), ress = Math.round(prev.main.feels_like);
+                    const vitKmh = Math.round((prev.wind?.speed || 0) * 3.6), temp = Math.round(prev.main.temp), ress = Math.round(prev.main.feels_like);
                     const iconePrefixe = pt.estArrivee ? '🏁 ' : pt.estSommet ? '⛰️ ' : '';
 
                     const isDark = document.body.getAttribute('data-theme') === 'dark';
@@ -1241,7 +1253,7 @@
                     let textePluie = probaPluie > 10 ? `<span style="color: #3498db; font-weight: bold;">💧 ${probaPluie}%</span><br>` : '';
                     const isDarkStyling = isDark ? 'background: #1e1e1e; color: #f5f6fa; border: 1.5px solid ' + couleurBordureMeteo + ';' : 'background: white; color: #2c3e50; border: 1.5px solid ' + couleurBordureMeteo + ';';
 
-                    pt.meteoCache = { temp, ress, probaPluie, desc: prev.weather[0].description };
+                    pt.meteoCache = { temp, ress, probaPluie, desc: prev.weather?.[0]?.description || '' };
 
                     let flechesHTML = '⬇';
                     let taillePoliceFleche = 22;
@@ -1257,9 +1269,10 @@
                         lineSpacing = 0.8;
                     }
 
+                    const degVent = prev.wind?.deg || 0;
                     const html = `
                     <div style="background: ${isDark ? 'rgba(30,30,30,0.95)' : 'rgba(255,255,255,0.95)'}; border-radius: 50%; width: 36px; height: 36px; display: flex; justify-content: center; align-items: center; box-shadow: 0 2px 5px var(--shadow); border: 3px solid ${couleurVent}; margin: 0 auto; pointer-events: none;">
-                        <div style="transform: rotate(${prev.wind.deg}deg); font-size: ${taillePoliceFleche}px; line-height: ${lineSpacing}; font-weight: bold; color: ${couleurVent}; text-align: center; display: flex; flex-direction: column; justify-content: center;">${flechesHTML}</div>
+                        <div style="transform: rotate(${degVent}deg); font-size: ${taillePoliceFleche}px; line-height: ${lineSpacing}; font-weight: bold; color: ${couleurVent}; text-align: center; display: flex; flex-direction: column; justify-content: center;">${flechesHTML}</div>
                     </div>
                     <div style="${isDarkStyling} border-radius: 4px; font-size: 11px; font-weight: bold; text-align: center; box-shadow: 0 1px 3px var(--shadow); margin-top: 4px; width: 72px; margin-left: -18px; padding: 3px 0; pointer-events: none; line-height: 1.3;">
                         ${iconePrefixe}${vitKmh} km/h<br>${textePluie}<span style="color: var(--text-secondary); font-size: 9px;">🕒 ${hTexte}</span>
@@ -1270,7 +1283,8 @@
                     marqueur.on('click', function(e) { this.openPopup(); });
                     pt.marqueur = marqueur;
                     marqueursVentParcours.push(marqueur); 
-                });
+                })
+                .catch(() => {});
             });
         }
 
@@ -1352,49 +1366,77 @@
         }
 
         document.getElementById('btn-gps').addEventListener('click', function() {
-            this.innerText = "⏳..."; 
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition((pos) => {
-                    const lat = pos.coords.latitude, lon = pos.coords.longitude;
-                    map.setView([lat, lon], 13);
-                    
-                    if (donneesGPX.length > 0) {
-                        let indexPlusProche = 0;
-                        let distMin = Infinity;
-                        
-                        for (let i = 0; i < donneesGPX.length; i++) {
-                            let d = calculerDistance(lat, lon, donneesGPX[i].lat, donneesGPX[i].lon);
-                            if (d < distMin) { distMin = d; indexPlusProche = i; }
-                        }
-                        
-                        if (distMin < 2) {
-                            distanceCyclisteActuelle = donneesGPX[indexPlusProche].distance;
-                            mettreAJourPointeur(indexPlusProche, false);
-                            ajouterVentSurParcours(pointsMeteoParcours);
-                        }
-                    }
+            const btnGps = this;
+            const msgErreur = document.getElementById('message-erreur');
+            const blocRafales = document.getElementById('bloc-rafales');
+            msgErreur.innerText = '';
+            blocRafales.style.display = 'none';
 
-                    fetch(`${urlRelaisMeteo}/?lat=${lat}&lon=${lon}&type=weather`)
-                    .then(r => r.json()).then(data => {
-                        if (modeActuel === 'trail' && data?.sys?.sunset) {
-                            sunsetUnixTrail = data.sys.sunset;
-                            mettreAJourAffichageMode();
-                        }
-                        document.getElementById('ville').innerText = data.name;
-                        document.getElementById('temperature').innerText = Math.round(data.main.temp);
-                        document.getElementById('temp-ressentie').innerText = Math.round(data.main.feels_like);
-                        document.getElementById('description').innerText = data.weather[0].description;
-                        document.getElementById('icone').src = `https://openweathermap.org/img/wn/${data.weather[0].icon}@2x.png`;
-                        document.getElementById('vitesse-vent').innerText = Math.round(data.wind.speed * 3.6);
-                        document.getElementById('direction-vent').innerText = ['Nord', 'Nord-Est', 'Est', 'Sud-Est', 'Sud', 'Sud-Ouest', 'Ouest', 'Nord-Ouest'][Math.round(data.wind.deg / 45) % 8];
-                        document.getElementById('fleche').style.transform = `rotate(${data.wind.deg}deg)`;
-                        document.getElementById('meteo-widget').style.display = 'block';
-                        document.getElementById('btn-gps').innerText = "🔄 Actualiser";
-                    });
-                }, () => { 
-                    this.innerText = "📍 Ma Position"; document.getElementById('meteo-widget').style.display = 'block'; 
-                });
+            if (!navigator.geolocation) {
+                msgErreur.innerText = 'Géolocalisation non prise en charge.';
+                document.getElementById('meteo-widget').style.display = 'block';
+                return;
             }
+
+            btnGps.innerText = "⏳...";
+            navigator.geolocation.getCurrentPosition((pos) => {
+                const lat = pos.coords.latitude, lon = pos.coords.longitude;
+                map.setView([lat, lon], 13);
+                
+                if (donneesGPX.length > 0) {
+                    let indexPlusProche = 0;
+                    let distMin = Infinity;
+                    
+                    for (let i = 0; i < donneesGPX.length; i++) {
+                        let d = calculerDistance(lat, lon, donneesGPX[i].lat, donneesGPX[i].lon);
+                        if (d < distMin) { distMin = d; indexPlusProche = i; }
+                    }
+                    
+                    if (distMin < 2) {
+                        distanceCyclisteActuelle = donneesGPX[indexPlusProche].distance;
+                        mettreAJourPointeur(indexPlusProche, false);
+                        ajouterVentSurParcours(pointsMeteoParcours);
+                    }
+                }
+
+                fetch(`${urlRelaisMeteo}/?lat=${lat}&lon=${lon}&type=weather`)
+                .then(async (r) => {
+                    const data = await r.json().catch(() => null);
+                    if (!r.ok || !data || !data.main) {
+                        throw new Error(data?.error || `Erreur météo (${r.status})`);
+                    }
+                    if (modeActuel === 'trail' && data?.sys?.sunset) {
+                        sunsetUnixTrail = data.sys.sunset;
+                        mettreAJourAffichageMode();
+                    }
+                    document.getElementById('ville').innerText = data.name || 'Position actuelle';
+                    document.getElementById('temperature').innerText = Math.round(data.main.temp);
+                    document.getElementById('temp-ressentie').innerText = Math.round(data.main.feels_like);
+                    document.getElementById('description').innerText = data.weather?.[0]?.description || '--';
+                    if (data.weather?.[0]?.icon) {
+                        document.getElementById('icone').src = `https://openweathermap.org/img/wn/${data.weather[0].icon}@2x.png`;
+                    }
+                    document.getElementById('vitesse-vent').innerText = Math.round((data.wind?.speed || 0) * 3.6);
+                    if (typeof data.wind?.gust === 'number' && data.wind.gust > 0) {
+                        document.getElementById('rafales-vent').innerText = Math.round(data.wind.gust * 3.6);
+                        blocRafales.style.display = 'block';
+                    }
+                    const degVent = data.wind?.deg || 0;
+                    document.getElementById('direction-vent').innerText = ['Nord', 'Nord-Est', 'Est', 'Sud-Est', 'Sud', 'Sud-Ouest', 'Ouest', 'Nord-Ouest'][Math.round(degVent / 45) % 8];
+                    document.getElementById('fleche').style.transform = `rotate(${degVent}deg)`;
+                    document.getElementById('meteo-widget').style.display = 'block';
+                    btnGps.innerText = "🔄 Actualiser";
+                })
+                .catch((err) => {
+                    msgErreur.innerText = err.message || 'Impossible de récupérer la météo.';
+                    document.getElementById('meteo-widget').style.display = 'block';
+                    btnGps.innerText = "📍 GPS";
+                });
+            }, () => { 
+                msgErreur.innerText = 'Position GPS refusée ou indisponible.';
+                btnGps.innerText = "📍 GPS";
+                document.getElementById('meteo-widget').style.display = 'block'; 
+            });
         });
     </script>
 </body>

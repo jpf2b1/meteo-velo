@@ -1,10 +1,11 @@
-const CACHE_NAME = 'meteo-velo-v2';
+const CACHE_NAME = 'meteo-velo-v3';
 
 const STATIC_ASSETS = [
   './',
   './index.html',
   './manifest.json',
-  './icon-192.png'
+  './icon-192.png',
+  './icon-512.png'
 ];
 
 self.addEventListener('install', event => {
@@ -88,7 +89,6 @@ self.addEventListener('fetch', event => {
   }
 
   // 4. Stratégie "Network First" avec repli sur le cache pour les fichiers de l'application
-  // Permet de récupérer la dernière version dès qu'il y a du réseau, tout en gardant un secours hors ligne
   event.respondWith(
     (async () => {
       try {
