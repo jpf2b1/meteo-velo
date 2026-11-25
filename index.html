@@ -35,6 +35,9 @@
             --card-bg: #f8f9fa;
             --trail-accent: #0f766e;
             --trail-bg: rgba(15, 118, 110, 0.1);
+            --night-alert-bg: rgba(217, 119, 6, 0.14);
+            --night-alert-border: #d97706;
+            --night-alert-text: #b45309;
         }
 
         [data-theme="dark"] {
@@ -56,6 +59,9 @@
             --card-bg: #2d2d2d;
             --trail-accent: #2dd4bf;
             --trail-bg: rgba(45, 212, 191, 0.12);
+            --night-alert-bg: rgba(251, 191, 36, 0.15);
+            --night-alert-border: #fbbf24;
+            --night-alert-text: #fbbf24;
         }
 
         body, html { 
@@ -137,6 +143,16 @@
             color: var(--text-primary); border-radius: 6px; padding: 5px 8px; font-size: 11px;
             font-weight: 600; margin-bottom: 6px; line-height: 1.35;
         }
+        #trail-ta-banner.alerte-nuit {
+            background: var(--night-alert-bg);
+            border-color: var(--night-alert-border);
+        }
+        .alerte-lampe {
+            display: inline-block;
+            margin-top: 3px;
+            color: var(--night-alert-text);
+            font-weight: 700;
+        }
         .input-vitesse, .input-date { 
             text-align: center; border: 1px solid var(--text-secondary); border-radius: 5px; padding: 3px 4px; 
             font-weight: bold; color: var(--border-panel); font-family: inherit; background-color: var(--bg-panel);
@@ -146,7 +162,7 @@
         .input-date { font-size: 12px; max-width: 148px; }
         
         .chart-container { position: relative; height: 165px; width: 100%; margin-top: 4px; cursor: crosshair; }
-        .legende-pente { text-align: center; font-size: 11px; margin-top: 6px; font-weight: bold; color: var(--text-pente-legende); }
+        .legende-pente { display: none; text-align: center; font-size: 11px; margin-top: 6px; font-weight: bold; color: var(--text-pente-legende); }
         
         .btn-reset, .btn-toggle { 
             padding: 4px 8px; font-size: 12px; border-radius: 6px; background: var(--bg-panel); 
@@ -264,7 +280,7 @@
                 <div class="stat-chip" id="chip-allure-trail" style="display: none;">🏃 <input type="number" id="allure-trail" class="input-vitesse" value="7.5" min="3" max="20" step="0.5"> min/km-eff.</div>
                 <div style="display:flex; gap:5px; align-items:center;">
                     <button id="btn-cols" class="btn-toggle" style="border-color:#e74c3c; color:#e74c3c;">⛰️ Montées 🔽</button>
-                    <button id="btn-toggle-legende" class="btn-toggle">Légende 🔽</button>
+                    <button id="btn-toggle-legende" class="btn-toggle">Légende 🔼</button>
                     <button id="btn-reset-zoom" class="btn-reset">🔍 Rétablir</button>
                 </div>
             </div>
@@ -299,6 +315,7 @@
         let marqueurPositionPointer = null;
         let sessionChargementId = 0;
         let modeActuel = 'velo';
+        let sunsetUnixConnu = null;
         let statsTrailCourantes = {
             distanceKm: 0,
             denivelePositifM: 0,
@@ -403,7 +420,7 @@
             }
         });
 
-        // ------------- MODE VÉLO / TRAIL & CALCUL DU TA -------------
+        // ------------- MODE VÉLO / TRAIL, TA & ALERTE LAMPE FRONTALE -------------
         function formaterTA(minutes) {
             const totalMins = Math.max(0, Math.round(minutes));
             const h = Math.floor(totalMins / 60);
@@ -469,6 +486,8 @@
             document.getElementById('chip-allure-trail').style.display = estTrail ? 'inline-flex' : 'none';
 
             const banner = document.getElementById('trail-ta-banner');
+            banner.classList.remove('alerte-nuit');
+
             if (!estTrail) {
                 banner.style.display = 'none';
                 return;
@@ -485,17 +504,35 @@
             statsTrailCourantes = calculerStatsTrail(donneesGPX, altitudes, allure);
 
             const tempsDepartSec = Math.floor(new Date(document.getElementById('date-depart').value).getTime() / 1000);
-            const heureArriveeTxt = Number.isFinite(tempsDepartSec)
-                ? new Date((tempsDepartSec + statsTrailCourantes.taTotalMinutes * 60) * 1000)
-                    .toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+            const heureArriveeSec = Number.isFinite(tempsDepartSec)
+                ? tempsDepartSec + statsTrailCourantes.taTotalMinutes * 60
+                : null;
+            const heureArriveeTxt = heureArriveeSec != null
+                ? new Date(heureArriveeSec * 1000).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
                 : '--:--';
+
+            let blocNuitHtml = '';
+            if (sunsetUnixConnu && heureArriveeSec != null) {
+                const sunsetDate = new Date(sunsetUnixConnu * 1000);
+                const sunsetFmt = sunsetDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+                const margeAvantNuitSec = 30 * 60;
+                const alerteLampe = heureArriveeSec >= sunsetUnixConnu - margeAvantNuitSec;
+
+                if (alerteLampe) {
+                    banner.classList.add('alerte-nuit');
+                    blocNuitHtml = `<br><span class="alerte-lampe">🔦 Lampe frontale recommandée : arrivée vers ${heureArriveeTxt}, coucher du soleil à ${sunsetFmt}.</span>`;
+                } else {
+                    blocNuitHtml = `<br><span style="color: var(--text-secondary);">🌅 Coucher du soleil à ${sunsetFmt} (fin prévue de jour).</span>`;
+                }
+            }
 
             banner.innerHTML =
                 `🏃 <b>TA estimé : ${formaterTA(statsTrailCourantes.taTotalMinutes)}</b> ` +
                 `(${statsTrailCourantes.distanceEffortKm.toFixed(1)} km-effort • ` +
                 `${statsTrailCourantes.distanceKm.toFixed(1)} km • ` +
                 `+${statsTrailCourantes.denivelePositifM} m D+) — ` +
-                `Arrivée estimée : <b>${heureArriveeTxt}</b>`;
+                `Arrivée estimée : <b>${heureArriveeTxt}</b>` +
+                blocNuitHtml;
         }
 
         document.getElementById('btn-mode-velo').addEventListener('click', function() {
@@ -518,7 +555,7 @@
                 ajouterVentSurParcours(pointsMeteoParcours);
             }
         });
-        // -------------------------------------------------------------
+        // ------------------------------------------------------------------------
 
         function calculerDistance(lat1, lon1, lat2, lon2) {
             const R = 6371, dLat = (lat2 - lat1) * Math.PI / 180, dLon = (lon2 - lon1) * Math.PI / 180;
@@ -975,6 +1012,18 @@
                 mettreAJourAffichageMode();
                 ajouterVentSurParcours(pointsMeteoParcours);
                 afficherMonteesEtNoms(ascensionsDetectees, distanceTotale, listeWaypoints, currentSession);
+
+                if (latlngsOptimises.length > 0 && !sunsetUnixConnu) {
+                    fetch(`${urlRelaisMeteo}/?lat=${latlngsOptimises[0][0]}&lon=${latlngsOptimises[0][1]}&type=weather`)
+                        .then(r => r.json())
+                        .then(data => {
+                            if (data?.sys?.sunset) {
+                                sunsetUnixConnu = data.sys.sunset;
+                                mettreAJourAffichageMode();
+                            }
+                        })
+                        .catch(() => {});
+                }
             }
         }
 
@@ -1002,7 +1051,7 @@
 
         document.getElementById('btn-toggle-legende').addEventListener('click', function() {
             const legende = document.getElementById('legende-couleurs');
-            if (legende.style.display === 'none') {
+            if (legende.style.display === 'none' || legende.style.display === '') {
                 legende.style.display = 'block'; this.innerText = "Légende 🔽";
             } else {
                 legende.style.display = 'none'; this.innerText = "Légende 🔼";
@@ -1210,6 +1259,10 @@
 
                     fetch(`${urlRelaisMeteo}/?lat=${lat}&lon=${lon}&type=weather`)
                     .then(r => r.json()).then(data => {
+                        if (data?.sys?.sunset) {
+                            sunsetUnixConnu = data.sys.sunset;
+                            mettreAJourAffichageMode();
+                        }
                         document.getElementById('ville').innerText = data.name;
                         document.getElementById('temperature').innerText = Math.round(data.main.temp);
                         document.getElementById('temp-ressentie').innerText = Math.round(data.main.feels_like);
