@@ -35,9 +35,8 @@
             --card-bg: #f8f9fa;
             --trail-accent: #0f766e;
             --trail-bg: rgba(15, 118, 110, 0.1);
-            --night-alert-bg: rgba(217, 119, 6, 0.14);
-            --night-alert-border: #d97706;
-            --night-alert-text: #b45309;
+            --night-badge-bg: rgba(217, 119, 6, 0.16);
+            --night-badge-text: #b45309;
         }
 
         [data-theme="dark"] {
@@ -59,9 +58,8 @@
             --card-bg: #2d2d2d;
             --trail-accent: #2dd4bf;
             --trail-bg: rgba(45, 212, 191, 0.12);
-            --night-alert-bg: rgba(251, 191, 36, 0.15);
-            --night-alert-border: #fbbf24;
-            --night-alert-text: #fbbf24;
+            --night-badge-bg: rgba(251, 191, 36, 0.18);
+            --night-badge-text: #fbbf24;
         }
 
         body, html { 
@@ -140,18 +138,19 @@
         }
         #trail-ta-banner {
             display: none; background: var(--trail-bg); border: 1px solid var(--trail-accent);
-            color: var(--text-primary); border-radius: 6px; padding: 5px 8px; font-size: 11px;
-            font-weight: 600; margin-bottom: 6px; line-height: 1.35;
+            color: var(--text-primary); border-radius: 6px; padding: 4px 7px; font-size: 11px;
+            font-weight: 600; margin-bottom: 5px; line-height: 1.25;
         }
-        #trail-ta-banner.alerte-nuit {
-            background: var(--night-alert-bg);
-            border-color: var(--night-alert-border);
-        }
-        .alerte-lampe {
-            display: inline-block;
-            margin-top: 3px;
-            color: var(--night-alert-text);
+        .lampe-badge {
+            display: none;
+            margin-left: 6px;
+            padding: 1px 5px;
+            border-radius: 4px;
+            background: var(--night-badge-bg);
+            color: var(--night-badge-text);
+            font-size: 10px;
             font-weight: 700;
+            white-space: nowrap;
         }
         .input-vitesse, .input-date { 
             text-align: center; border: 1px solid var(--text-secondary); border-radius: 5px; padding: 3px 4px; 
@@ -285,7 +284,10 @@
                 </div>
             </div>
 
-            <div id="trail-ta-banner"></div>
+            <div id="trail-ta-banner">
+                <span id="trail-ta-texte"></span>
+                <span id="trail-lampe-badge" class="lampe-badge"></span>
+            </div>
             
             <div id="liste-montees"></div>
             <div class="chart-container"><canvas id="elevationChart"></canvas></div>
@@ -420,7 +422,7 @@
             }
         });
 
-        // ------------- MODE VÉLO / TRAIL, TA & ALERTE LAMPE FRONTALE (TRAIL UNIQUEMENT) -------------
+        // ------------- MODE VÉLO / TRAIL, TA & BADGE LAMPE DISCRET (TRAIL UNIQUEMENT) -------------
         function formaterTA(minutes) {
             const totalMins = Math.max(0, Math.round(minutes));
             const h = Math.floor(totalMins / 60);
@@ -502,17 +504,21 @@
             document.getElementById('chip-allure-trail').style.display = estTrail ? 'inline-flex' : 'none';
 
             const banner = document.getElementById('trail-ta-banner');
-            banner.classList.remove('alerte-nuit');
+            const texteEl = document.getElementById('trail-ta-texte');
+            const badgeEl = document.getElementById('trail-lampe-badge');
+
+            badgeEl.style.display = 'none';
+            badgeEl.textContent = '';
 
             if (!estTrail) {
                 banner.style.display = 'none';
-                banner.innerHTML = '';
+                texteEl.textContent = '';
                 return;
             }
 
             banner.style.display = 'block';
             if (!donneesGPX.length) {
-                banner.textContent = '🏃 Mode Trail actif : chargez un fichier GPX pour calculer le Temps Alloué (TA) et vérifier le coucher du soleil.';
+                texteEl.textContent = '🏃 TA : chargez un GPX.';
                 return;
             }
 
@@ -528,28 +534,19 @@
                 ? new Date(heureArriveeSec * 1000).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
                 : '--:--';
 
-            let blocNuitHtml = '';
-            if (sunsetUnixTrail && heureArriveeSec != null) {
-                const sunsetDate = new Date(sunsetUnixTrail * 1000);
-                const sunsetFmt = sunsetDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-                const margeAvantNuitSec = 30 * 60;
-                const alerteLampe = heureArriveeSec >= sunsetUnixTrail - margeAvantNuitSec;
+            texteEl.innerHTML =
+                `🏃 <b>TA ${formaterTA(statsTrailCourantes.taTotalMinutes)}</b> • ` +
+                `${statsTrailCourantes.distanceEffortKm.toFixed(1)} km-eff. • ` +
+                `Arr. <b>${heureArriveeTxt}</b>`;
 
-                if (alerteLampe) {
-                    banner.classList.add('alerte-nuit');
-                    blocNuitHtml = `<br><span class="alerte-lampe">🔦 Lampe frontale à prévoir : arrivée vers ${heureArriveeTxt}, coucher du soleil à ${sunsetFmt}.</span>`;
-                } else {
-                    blocNuitHtml = `<br><span style="color: var(--text-secondary);">🌅 Coucher du soleil à ${sunsetFmt} (arrivée estimée de jour).</span>`;
-                }
+            if (sunsetUnixTrail && heureArriveeSec != null && heureArriveeSec >= sunsetUnixTrail - 30 * 60) {
+                const sunsetFmt = new Date(sunsetUnixTrail * 1000).toLocaleTimeString('fr-FR', {
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+                badgeEl.textContent = `🔦 Lampe (🌅 ${sunsetFmt})`;
+                badgeEl.style.display = 'inline-block';
             }
-
-            banner.innerHTML =
-                `🏃 <b>TA estimé : ${formaterTA(statsTrailCourantes.taTotalMinutes)}</b> ` +
-                `(${statsTrailCourantes.distanceEffortKm.toFixed(1)} km-effort • ` +
-                `${statsTrailCourantes.distanceKm.toFixed(1)} km • ` +
-                `+${statsTrailCourantes.denivelePositifM} m D+) — ` +
-                `Arrivée estimée : <b>${heureArriveeTxt}</b>` +
-                blocNuitHtml;
         }
 
         document.getElementById('btn-mode-velo').addEventListener('click', function() {
