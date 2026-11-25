@@ -318,6 +318,7 @@
         let sessionChargementId = 0;
         let modeActuel = 'velo';
         let sunsetUnixTrail = null;
+        let derniereTraceContexte = null;
         let statsTrailCourantes = {
             distanceKm: 0,
             denivelePositifM: 0,
@@ -422,7 +423,7 @@
             }
         });
 
-        // ------------- MODE VÉLO / TRAIL, TA & BADGE LAMPE DISCRET (TRAIL UNIQUEMENT) -------------
+        // ------------- MODE VÉLO / TRAIL, TA & POINTS MÉTÉO EN KM-EFFORT -------------
         function formaterTA(minutes) {
             const totalMins = Math.max(0, Math.round(minutes));
             const h = Math.floor(totalMins / 60);
@@ -477,6 +478,134 @@
                 }
             }
             return statsTrailCourantes.cumulKmEffortParPoint[meilleurIdx] ?? kmCible;
+        }
+
+        function construirePointsMeteoSelonMode(ctx) {
+            if (!ctx || !ctx.donneesGPX.length) return [];
+
+            const {
+                donneesGPX: pts,
+                distanceTotale,
+                grandsSommets,
+                derniereLat,
+                derniereLon,
+                cumulEffortOptimise
+            } = ctx;
+
+            if (modeActuel !== 'trail') {
+                let intervalleMeteo = distanceTotale < 30 ? 5 : distanceTotale < 60 ? 10 : distanceTotale < 100 ? 15 : distanceTotale < 200 ? 20 : distanceTotale < 400 ? 30 : 50;
+                let pointsStandards = [];
+                let prochainPalierMeteo = intervalleMeteo;
+                for (let i = 0; i < pts.length; i++) {
+                    if (pts[i].distance >= prochainPalierMeteo) {
+                        pointsStandards.push({ lat: pts[i].lat, lon: pts[i].lon, km: prochainPalierMeteo, estArrivee: false, estSommet: false });
+                        prochainPalierMeteo += intervalleMeteo;
+                    }
+                }
+
+                if (pointsStandards.length > 0 && (distanceTotale - pointsStandards[pointsStandards.length - 1].km < (intervalleMeteo * 0.2))) {
+                    pointsStandards.pop();
+                }
+
+                let liste = pointsStandards.filter(pt => {
+                    const tropProcheSommet = grandsSommets.some(s => Math.abs(s.kmSommet - pt.km) < 3.0);
+                    const tropProcheArrivee = (distanceTotale - pt.km) < 2.0;
+                    return !tropProcheSommet && !tropProcheArrivee;
+                });
+
+                grandsSommets.forEach((s) => {
+                    if (distanceTotale - s.kmSommet >= 1.5) {
+                        liste.push({
+                            lat: s.latSommet,
+                            lon: s.lonSommet,
+                            km: parseFloat(s.kmSommet.toFixed(1)),
+                            estArrivee: false,
+                            estSommet: true,
+                            nomSommet: s.nom || `Sommet (${s.altitudeSommet} m)`
+                        });
+                    }
+                });
+
+                liste.push({ lat: derniereLat, lon: derniereLon, km: parseFloat(distanceTotale.toFixed(1)), estArrivee: true, estSommet: false });
+                liste.sort((a, b) => a.km - b.km);
+                return liste;
+            }
+
+            // Mode Trail : espacement selon la distance-effort (km-effort)
+            const totalEffortKm = cumulEffortOptimise[cumulEffortOptimise.length - 1] || distanceTotale;
+            const intervalleEffort = totalEffortKm < 25 ? 4 : totalEffortKm < 60 ? 7 : totalEffortKm < 120 ? 12 : 20;
+
+            const sommetsAvecEffort = grandsSommets.map(s => {
+                let idxSommet = 0;
+                let minEcart = Infinity;
+                for (let i = 0; i < pts.length; i++) {
+                    const ecart = Math.abs(pts[i].distance - s.kmSommet);
+                    if (ecart < minEcart) {
+                        minEcart = ecart;
+                        idxSommet = i;
+                    }
+                }
+                return {
+                    ...s,
+                    effortSommet: cumulEffortOptimise[idxSommet] ?? s.kmSommet
+                };
+            });
+
+            let pointsEffortStandards = [];
+            let prochainPalierEffort = intervalleEffort;
+            for (let i = 0; i < pts.length; i++) {
+                const effCourant = cumulEffortOptimise[i] ?? pts[i].distance;
+                if (effCourant >= prochainPalierEffort) {
+                    pointsEffortStandards.push({
+                        lat: pts[i].lat,
+                        lon: pts[i].lon,
+                        km: parseFloat(pts[i].distance.toFixed(1)),
+                        effortKm: prochainPalierEffort,
+                        estArrivee: false,
+                        estSommet: false
+                    });
+                    prochainPalierEffort += intervalleEffort;
+                }
+            }
+
+            if (
+                pointsEffortStandards.length > 0 &&
+                (totalEffortKm - pointsEffortStandards[pointsEffortStandards.length - 1].effortKm < intervalleEffort * 0.2)
+            ) {
+                pointsEffortStandards.pop();
+            }
+
+            let listeTrail = pointsEffortStandards.filter(pt => {
+                const tropProcheSommet = sommetsAvecEffort.some(s => Math.abs(s.effortSommet - pt.effortKm) < 2.5);
+                const tropProcheArrivee = (totalEffortKm - pt.effortKm) < 2.0;
+                return !tropProcheSommet && !tropProcheArrivee;
+            });
+
+            sommetsAvecEffort.forEach((s) => {
+                if (totalEffortKm - s.effortSommet >= 1.5) {
+                    listeTrail.push({
+                        lat: s.latSommet,
+                        lon: s.lonSommet,
+                        km: parseFloat(s.kmSommet.toFixed(1)),
+                        effortKm: s.effortSommet,
+                        estArrivee: false,
+                        estSommet: true,
+                        nomSommet: s.nom || `Sommet (${s.altitudeSommet} m)`
+                    });
+                }
+            });
+
+            listeTrail.push({
+                lat: derniereLat,
+                lon: derniereLon,
+                km: parseFloat(distanceTotale.toFixed(1)),
+                effortKm: totalEffortKm,
+                estArrivee: true,
+                estSommet: false
+            });
+
+            listeTrail.sort((a, b) => a.km - b.km);
+            return listeTrail;
         }
 
         function recupererCoucherSoleilTrailSiBesoin() {
@@ -549,20 +678,21 @@
             }
         }
 
-        document.getElementById('btn-mode-velo').addEventListener('click', function() {
-            if (modeActuel === 'velo') return;
-            modeActuel = 'velo';
+        function basculerModeActivite(nouveauMode) {
+            if (modeActuel === nouveauMode) return;
+            modeActuel = nouveauMode;
             mettreAJourAffichageMode();
-            if (pointsMeteoParcours.length > 0) ajouterVentSurParcours(pointsMeteoParcours);
-        });
+            if (modeActuel === 'trail') {
+                recupererCoucherSoleilTrailSiBesoin();
+            }
+            if (derniereTraceContexte) {
+                pointsMeteoParcours = construirePointsMeteoSelonMode(derniereTraceContexte);
+                ajouterVentSurParcours(pointsMeteoParcours);
+            }
+        }
 
-        document.getElementById('btn-mode-trail').addEventListener('click', function() {
-            if (modeActuel === 'trail') return;
-            modeActuel = 'trail';
-            mettreAJourAffichageMode();
-            recupererCoucherSoleilTrailSiBesoin();
-            if (pointsMeteoParcours.length > 0) ajouterVentSurParcours(pointsMeteoParcours);
-        });
+        document.getElementById('btn-mode-velo').addEventListener('click', () => basculerModeActivite('velo'));
+        document.getElementById('btn-mode-trail').addEventListener('click', () => basculerModeActivite('trail'));
 
         document.getElementById('allure-trail').addEventListener('change', function() {
             mettreAJourAffichageMode();
@@ -570,7 +700,7 @@
                 ajouterVentSurParcours(pointsMeteoParcours);
             }
         });
-        // ---------------------------------------------------------------------------------------
+        // -----------------------------------------------------------------------------
 
         function calculerDistance(lat1, lon1, lat2, lon2) {
             const R = 6371, dLat = (lat2 - lat1) * Math.PI / 180, dLon = (lon2 - lon1) * Math.PI / 180;
@@ -892,8 +1022,8 @@
                 }
             }
             
-            let latlngs = [], labelsDistance = [], dataAltitude = [], rawDistances = [];
-            let distanceTotale = 0, denivelePositif = 0, derniereLat = null, derniereLon = null, derniereEle = null;
+            let latlngs = [], labelsDistance = [], dataAltitude = [], rawDistances = [], cumulEffortBrut = [];
+            let distanceTotale = 0, denivelePositif = 0, cumulEffort = 0, derniereLat = null, derniereLon = null, derniereEle = null;
             pointsMeteoParcours = []; donneesGPX = [];
             
             indexPositionCycliste = null;
@@ -913,12 +1043,16 @@
                     const dist = calculerDistance(derniereLat, derniereLon, lat, lon);
                     distanceTotale += dist;
                     if (ele > derniereEle) denivelePositif += (ele - derniereEle); 
+                    const diffEle = ele - derniereEle;
+                    const dPlusFiltre = diffEle >= 2 ? diffEle : 0;
+                    cumulEffort += dist + dPlusFiltre / 100;
                 }
                 
                 donneesGPX.push({ lat: lat, lon: lon, distance: distanceTotale });
                 labelsDistance.push(distanceTotale.toFixed(1));
                 dataAltitude.push(ele);
                 rawDistances.push(distanceTotale); 
+                cumulEffortBrut.push(cumulEffort);
                 derniereLat = lat; derniereLon = lon; derniereEle = ele;
             }
 
@@ -931,6 +1065,7 @@
                 const altitudeOptimisee = [];
                 const distancesOptimisees = [];
                 const donneesGPXOptimisees = [];
+                const cumulEffortOptimise = [];
 
                 for (let i = 0; i < latlngs.length; i += pas) {
                     latlngsOptimises.push(latlngs[i]);
@@ -938,6 +1073,7 @@
                     altitudeOptimisee.push(dataAltitude[i]);
                     distancesOptimisees.push(rawDistances[i]);
                     donneesGPXOptimisees.push(donneesGPX[i]);
+                    cumulEffortOptimise.push(cumulEffortBrut[i]);
                 }
                 if ((latlngs.length - 1) % pas !== 0) {
                     const last = latlngs.length - 1;
@@ -946,6 +1082,7 @@
                     altitudeOptimisee.push(dataAltitude[last]);
                     distancesOptimisees.push(rawDistances[last]);
                     donneesGPXOptimisees.push(donneesGPX[last]);
+                    cumulEffortOptimise.push(cumulEffortBrut[last]);
                 }
 
                 donneesGPX = donneesGPXOptimisees;
@@ -955,41 +1092,16 @@
                 const seuilDeniveleMeteo = distanceTotale < 100 ? 80 : 150;
                 const grandsSommets = ascensionsDetectees.filter(m => m.denivele >= seuilDeniveleMeteo);
 
-                let intervalleMeteo = distanceTotale < 30 ? 5 : distanceTotale < 60 ? 10 : distanceTotale < 100 ? 15 : distanceTotale < 200 ? 20 : distanceTotale < 400 ? 30 : 50;
-                let pointsStandards = [];
-                let prochainPalierMeteo = intervalleMeteo;
-                for (let i = 0; i < donneesGPX.length; i++) {
-                    if (donneesGPX[i].distance >= prochainPalierMeteo) {
-                        pointsStandards.push({ lat: donneesGPX[i].lat, lon: donneesGPX[i].lon, km: prochainPalierMeteo, estArrivee: false, estSommet: false });
-                        prochainPalierMeteo += intervalleMeteo;
-                    }
-                }
+                derniereTraceContexte = {
+                    donneesGPX: donneesGPXOptimisees,
+                    distanceTotale,
+                    grandsSommets,
+                    derniereLat,
+                    derniereLon,
+                    cumulEffortOptimise
+                };
 
-                if (pointsStandards.length > 0 && (distanceTotale - pointsStandards[pointsStandards.length - 1].km < (intervalleMeteo * 0.2))) {
-                    pointsStandards.pop();
-                }
-
-                pointsMeteoParcours = pointsStandards.filter(pt => {
-                    const tropProcheSommet = grandsSommets.some(s => Math.abs(s.kmSommet - pt.km) < 3.0);
-                    const tropProcheArrivee = (distanceTotale - pt.km) < 2.0;
-                    return !tropProcheSommet && !tropProcheArrivee;
-                });
-
-                grandsSommets.forEach((s) => {
-                    if (distanceTotale - s.kmSommet >= 1.5) {
-                        pointsMeteoParcours.push({
-                            lat: s.latSommet,
-                            lon: s.lonSommet,
-                            km: parseFloat(s.kmSommet.toFixed(1)),
-                            estArrivee: false,
-                            estSommet: true,
-                            nomSommet: s.nom || `Sommet (${s.altitudeSommet} m)`
-                        });
-                    }
-                });
-
-                pointsMeteoParcours.push({ lat: derniereLat, lon: derniereLon, km: parseFloat(distanceTotale.toFixed(1)), estArrivee: true, estSommet: false });
-                pointsMeteoParcours.sort((a, b) => a.km - b.km);
+                pointsMeteoParcours = construirePointsMeteoSelonMode(derniereTraceContexte);
 
                 if (traceGPXLayer) map.removeLayer(traceGPXLayer);
                 
