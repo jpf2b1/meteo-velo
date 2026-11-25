@@ -4,6 +4,23 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Météo & Traceur Vélo / Trail</title>
+
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-0Z8HWDEELN"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag() { dataLayer.push(arguments); }
+        gtag('js', new Date());
+        gtag('config', 'G-0Z8HWDEELN', {
+            send_page_view: true
+        });
+
+        function trackEvent(nomEvenement, params = {}) {
+            if (typeof gtag === 'function') {
+                gtag('event', nomEvenement, params);
+            }
+        }
+    </script>
     
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" id="meta-theme-color" content="#2980b9">
@@ -363,7 +380,8 @@
                 document.getElementById('btn-reload').style.display = 'flex';
                 
                 if (window.location.search.includes('shared=true')) {
-                    window.history.replaceState({}, document.title, "./"); 
+                    window.history.replaceState({}, document.title, "./");
+                    trackEvent('ouvrir_gpx_partage', { mode: modeActuel });
                     traiterGPX(gpxHistorique); 
                 }
             }
@@ -372,7 +390,10 @@
         document.getElementById('btn-reload').addEventListener('click', async function() {
             this.innerText = "⏳...";
             const gpxHistorique = await chargerDernierGPX();
-            if (gpxHistorique) traiterGPX(gpxHistorique);
+            if (gpxHistorique) {
+                trackEvent('charger_historique_gpx', { mode: modeActuel });
+                traiterGPX(gpxHistorique);
+            }
             this.innerHTML = "🔄 Historique";
         });
 
@@ -408,11 +429,13 @@
                 this.innerHTML = '🌙';
                 document.getElementById('meta-theme-color').setAttribute('content', '#2980b9');
                 if (traceMonteeActive) traceMonteeActive.setStyle({ color: '#3498db' });
+                trackEvent('changer_theme', { theme: 'light' });
             } else {
                 body.setAttribute('data-theme', 'dark');
                 this.innerHTML = '☀️';
                 document.getElementById('meta-theme-color').setAttribute('content', '#10ac84');
                 if (traceMonteeActive) traceMonteeActive.setStyle({ color: '#00d2d3' });
+                trackEvent('changer_theme', { theme: 'dark' });
             }
             
             if (donneesGPX.length > 0 && graphiqueAltitude) {
@@ -684,6 +707,7 @@
         function basculerModeActivite(nouveauMode) {
             if (modeActuel === nouveauMode) return;
             modeActuel = nouveauMode;
+            trackEvent('changer_mode', { mode: modeActuel });
             mettreAJourAffichageMode();
             if (modeActuel === 'trail') {
                 recupererCoucherSoleilTrailSiBesoin();
@@ -1060,6 +1084,12 @@
             }
 
             if (latlngs.length > 0) {
+                trackEvent('charger_gpx', {
+                    mode: modeActuel,
+                    distance_km: Math.round(distanceTotale),
+                    denivele_m: Math.round(denivelePositif)
+                });
+
                 const maxPointsVisuels = 1500;
                 const pas = Math.max(1, Math.floor(latlngs.length / maxPointsVisuels));
                 
@@ -1161,6 +1191,7 @@
             const liste = document.getElementById('liste-montees');
             if (liste.style.display === 'none' || liste.style.display === '') {
                 liste.style.display = 'block'; this.innerText = "⛰️ Montées 🔼";
+                trackEvent('afficher_montees', { mode: modeActuel });
             } else {
                 liste.style.display = 'none'; this.innerText = "⛰️ Montées 🔽";
                 if (traceMonteeActive) { map.removeLayer(traceMonteeActive); traceMonteeActive = null; }
@@ -1371,6 +1402,7 @@
             const blocRafales = document.getElementById('bloc-rafales');
             msgErreur.innerText = '';
             blocRafales.style.display = 'none';
+            trackEvent('clic_gps', { mode: modeActuel });
 
             if (!navigator.geolocation) {
                 msgErreur.innerText = 'Géolocalisation non prise en charge.';
